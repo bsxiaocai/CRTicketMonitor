@@ -1,0 +1,8 @@
+{
+    "dc_classification": {
+        "description": "official: DC全归为动车; smart: 仅CD字头1-899归为普通车",
+        "default_mode": "smart",
+        "smart_threshold": 899,
+        "custom_mapping": {}
+    }
+}

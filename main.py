@@ -1,6 +1,5 @@
 import requests
 import time
-import random
 import re
 import json
 import os
@@ -12,181 +11,227 @@ from prettytable import PrettyTable
 class TrainMonitor:
     def __init__(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.json_file = os.path.join(base_dir, "station_codes.json")
-        
+        self.station_json = os.path.join(base_dir, "station_codes.json")
+        self.config_json = os.path.join(base_dir, "config.json")
+
         self.station_dict = {}
         self.code_to_name = {}
         self.session = requests.Session()
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": "https://kyfw.12306.cn/otn/leftTicket/init",
         }
-        # 初始化时进行第一次同步
+        
+        # 默认使用官方定义
+        self.config = {
+            "dc_classification": {
+                "default_mode": "official",
+                "smart_threshold": 899,
+                "custom_mapping": {}
+            }
+        }
+        
+        self.load_config()
         self.init_station_data()
 
-    def init_station_data(self):
-        """同步车站数据并建立双向映射"""
-        local_count = 0
-        if os.path.exists(self.json_file):
+    def load_config(self):
+        if os.path.exists(self.config_json):
             try:
-                with open(self.json_file, "r", encoding="utf-8") as f:
-                    self.station_dict = json.load(f)
-                    local_count = len(self.station_dict)
+                with open(self.config_json, "r", encoding="utf-8") as f:
+                    self.config = json.load(f)
             except: pass
-        
-        print(f"[*] 正在从12306同步车站数据 (本地已有: {local_count})...")
+
+    def save_config(self):
         try:
-            # 增加随机参数绕过缓存
-            res = self.session.get(f'https://kyfw.12306.cn/otn/resources/js/framework/station_name.js?v={time.time()}', timeout=10)
+            with open(self.config_json, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=4)
+        except: pass
+
+    def init_station_data(self):
+        """同步车站编码数据"""
+        try:
+            url = f'https://kyfw.12306.cn/otn/resources/js/framework/station_name.js?v={time.time()}'
+            res = self.session.get(url, timeout=10)
             matched = re.findall(r'([\u4e00-\u9fa5]+)\|([A-Z]+)', res.text)
             if matched:
-                remote_data = {name: code for name, code in matched}
-                before_count = len(self.station_dict)
-                self.station_dict.update(remote_data)
-                after_count = len(self.station_dict)
-                
-                with open(self.json_file, "w", encoding="utf-8") as f:
+                self.station_dict = {name: code for name, code in matched}
+                with open(self.station_json, "w", encoding="utf-8") as f:
                     json.dump(self.station_dict, f, ensure_ascii=False, indent=4)
-                
-                print(f"[√] 数据同步成功！本次新增: {after_count - before_count} 个，当前总计: {after_count} 个站点。")
-            else:
-                print("[!] 解析失败，请检查12306接口是否变动。")
-        except Exception as e:
-            print(f"[!] 同步失败: {e}。将尝试使用现有本地数据。")
+        except:
+            if os.path.exists(self.station_json):
+                with open(self.station_json, "r", encoding="utf-8") as f:
+                    self.station_dict = json.load(f)
         
-        # 建立代码到站名的反向映射
         self.code_to_name = {code: name for name, code in self.station_dict.items()}
 
+    def classify_train(self, train_no):
+        """后台判断逻辑"""
+        conf = self.config["dc_classification"]
+        if train_no in conf.get("custom_mapping", {}):
+            return conf["custom_mapping"][train_no]
+
+        prefix = train_no[0].upper()
+        num_part = re.search(r'\d+', train_no)
+        number = int(num_part.group()) if num_part else 9999
+
+        if prefix in ['K', 'T', 'Z'] or train_no.isdigit():
+            return "普通车"
+        if prefix == 'G':
+            return "高铁动车"
+        if prefix in ['D', 'C']:
+            if conf.get("default_mode") == "official":
+                return "高铁动车"
+            return "普通车" if number <= conf.get("smart_threshold", 899) else "高铁动车"
+        return "其他"
+
     def query_tickets(self, date, from_station, to_station):
-        """执行查询，若车站不存在则触发一次自动同步"""
+        """执行查询，站名匹配失败则强制同步"""
         if from_station not in self.station_dict or to_station not in self.station_dict:
-            print(f"\n[?] 发现未知车站或城市，正在尝试第二次在线同步...")
             self.init_station_data()
 
         from_code = self.station_dict.get(from_station)
         to_code = self.station_dict.get(to_station)
         
         if not from_code or not to_code:
-            missing = from_station if not from_code else to_station
-            print(f"\n[!] 错误：找不到车站或该城市 '{missing}'。请确保输入的是标准站名。")
             return "STATION_NOT_FOUND"
 
         url = f"https://kyfw.12306.cn/otn/leftTicket/query?leftTicketDTO.train_date={date}&leftTicketDTO.from_station={from_code}&leftTicketDTO.to_station={to_code}&purpose_codes=ADULT"
         try:
-            self.session.get("https://kyfw.12306.cn/otn/leftTicket/init", headers=self.headers)
+            self.session.get("https://kyfw.12306.cn/otn/leftTicket/init", headers=self.headers, timeout=5)
             response = self.session.get(url, headers=self.headers, timeout=10)
-            return response.json()['data']['result']
-        except Exception as e:
+            return response.json().get('data', {}).get('result', [])
+        except:
             return None
 
-    def parse_and_print(self, raw_data, target_trains=None):
-        """解析并展示常用坐席"""
+    def parse_and_print(self, raw_data, target_trains=None, type_filter=None, sel_from=None, sel_to=None):
         table = PrettyTable()
-        # 更新表头，加入“软座”
-        table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商务", "一等座", "二等座", "软/一等卧", "硬/二等卧", "硬座", "软座", "无座"]
+        # 更新表头名称
+        table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商/特", "一等座", "二等座", "一等/软卧", "二等/硬卧", "软座", "硬座", "无座"]
         
         for item in raw_data:
             d = item.split('|')
             train_no = d[3]
+            train_type = self.classify_train(train_no)
+            
+            if type_filter and type_filter not in train_type: continue
             if target_trains and train_no not in target_trains: continue
 
-            from_nm = self.code_to_name.get(d[6], d[6])
-            to_nm = self.code_to_name.get(d[7], d[7])
+            f_st_name = self.code_to_name.get(d[6], d[6])
+            t_st_name = self.code_to_name.get(d[7], d[7])
+            if sel_from and f_st_name != sel_from: continue
+            if sel_to and t_st_name != sel_to: continue
 
-            # 提取票额信息
+            # 坐席解析
             sw = d[32] or "--"   # 商务/特等
             yd = d[31] or "--"   # 一等座
             ed = d[30] or "--"   # 二等座
-            rz = d[24] or "--"   # 软座 (索引 24)
             y_wo = d[23] or "--" # 一等卧/软卧
             e_wo = d[28] or "--" # 二等卧/硬卧
+            rz = d[24] or "--"   # 软座
             yz = d[29] or "--"   # 硬座
             wz = d[26] or "--"   # 无座
 
-            # 变绿逻辑：常用坐席（含软座）中有票
-            major_seats = [sw, yd, ed, rz, y_wo, e_wo, yz]
-            has_ticket = any(s not in ['无', '--', '', '0'] for s in major_seats)
-
-            # 构造行数据
-            row = [train_no, from_nm, to_nm, d[8], d[9], d[10], sw, yd, ed, y_wo, e_wo, yz, rz, wz]
-
-            if has_ticket:
-                row[0] = f"\033[92m{train_no}\033[0m" # 有票时车次显示绿色
-
+            row = [train_no, f_st_name, t_st_name, d[8], d[9], d[10], sw, yd, ed, y_wo, e_wo, rz, yz, wz]
+            
+            # 基础着色逻辑（非S字头：有任意票即绿）
+            has_ticket = any(s not in ['无', '--', '', '0'] for s in [sw, yd, ed, y_wo, e_wo, rz, yz])
+            
+            # S字头特殊逻辑
+            if train_no.upper().startswith('S'):
+                is_green = False
+                ed_has = ed not in ['无', '--', '', '0']
+                wz_has = wz not in ['无', '--', '', '0']
+                
+                # 情况1: 有二等座或无座席位，且任一有票
+                if (ed != "--" or wz != "--") and (ed_has or wz_has):
+                    is_green = True
+                # 情况2: 只有无座席位且有票
+                elif (ed == "--" and yd == "--" and rz == "--" and wz != "--") and wz_has:
+                    is_green = True
+                
+                if is_green:
+                    row[0] = f"\033[92m{train_no}\033[0m"
+            else:
+                if has_ticket:
+                    row[0] = f"\033[92m{train_no}\033[0m"
+            
             table.add_row(row)
-        
         print(table)
 
     def start(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("\n" + "="*65)
+        print("=== 12306 余票查询与监控助手 ver 1.1.0 design by BH7GUL ===")
+        print("="*65)
+        
+        f_st = input("1. 始发城市/站: ").strip()
+        t_st = input("2. 到达城市/站: ").strip()
+        date = input("3. 出发日期 (YYYY-MM-DD): ").strip()
+        t_in = input("4. 监控车次 (回车全部): ").strip()
+        target = t_in.split() if t_in else None
+
+        type_filter, sel_from, sel_to = None, None, None
+
         while True:
+            data = self.query_tickets(date, f_st, t_st)
+            
+            # 站名匹配失败处理
+            if data == "STATION_NOT_FOUND":
+                print(f"\n[!] 错误：无法识别站名。请检查是否输入了简写或错别字。")
+                input("请按 [回车键] 重新开始查询...")
+                return self.start()
+
+            now = datetime.now().strftime("%H:%M:%S")
             os.system('cls' if os.name == 'nt' else 'clear')
-            print("\n" + "="*65)
-            print("=== 12306 余票查询与监控助手 ver 1.0.1 design by BH7GUL ===")
-            print("="*65)
-            print(" [操作提示]: 输入 Q 退出程序 | 请输入正确的出发和到达的城市")
-            print("-" * 65)
             
-            f_st = input("1. 始发站: ").strip()
-            if f_st.upper() == 'Q': break
-            t_st = input("2. 到达站: ").strip()
-            if t_st.upper() == 'Q': break
-            
-            date = input("3. 出发日期 (如 2026-01-01): ").strip()
-            if date.upper() == 'Q': break
-            
-            t_input = input("4. 监控特定车次 (空格分隔，直接回车监控全部): ").strip()
-            if t_input.upper() == 'Q': break
-            target = t_input.split() if t_input else None
-            
-            mode = '1' # 1:自动, 2:手动
-            print("\n[OK] 监控已就绪。正在进入实时界面...")
-            time.sleep(1)
+            mode_str = "官方定义" if self.config["dc_classification"]["default_mode"] == "official" else "智能识别(动集归普)"
+            print(f"[{now}] {f_st} -> {t_st} ({date}) | 模式: {mode_str}")
+            print(f"当前筛选: 类型[{type_filter or '全部'}] | 始发[{sel_from or '全部'}] | 到达[{sel_to or '全部'}]")
+            print("-" * 110)
+            print("[S]筛选车型  [F]筛选站点  [M]切换对动集的识别模式  [C]重置筛选  [R]重新查询  [Q]退出")
 
-            while True:
-                now = datetime.now().strftime("%H:%M:%S")
-                data = self.query_tickets(date, f_st, t_st)
-                
-                if data == "STATION_NOT_FOUND":
-                    input("\n[!] 车站匹配失败，按回车返回重新输入..."); break
+            if data:
+                self.parse_and_print(data, target, type_filter, sel_from, sel_to)
+            else:
+                print("\n目前没有符合条件的列车。")
 
-                os.system('cls' if os.name == 'nt' else 'clear')
-                print(f"路线: {f_st} -> {t_st} | 日期: {date} | 模式: {'[自动刷新]' if mode=='1' else '[手动触发]'}")
-                print(f"时间: {now} | 指令: [R]新查询 | [Q]退出 | [M/A]切模式 | [Enter]刷新")
-                print("-" * 125)
+            wait_sec = 180
+            for i in range(wait_sec, 0, -1):
+                print(f"\r{i}s 后刷新... (Enter立即刷新)", end="", flush=True)
+                if msvcrt.kbhit():
+                    key = msvcrt.getch().lower()
+                    if key == b'\r': break
+                    if key == b's':
+                        print("\n1.全部  2.高铁动车  3.普通车")
+                        opt = input("选择(1/2/3): ").strip()
+                        type_filter = {"2": "高铁动车", "3": "普通车"}.get(opt)
+                        break
+                    if key == b'f' and data:
+                        s_from = sorted(list(set(self.code_to_name.get(x.split('|')[6], x.split('|')[6]) for x in data)))
+                        s_to = sorted(list(set(self.code_to_name.get(x.split('|')[7], x.split('|')[7]) for x in data)))
+                        
+                        print("\n" + "-"*30)
+                        print(f"[始发站选项]: {s_from}")
+                        print(f"[到达站选项]: {s_to}")
+                        print("[提示]: 直接按回车表示“全部”，不进行该项筛选") # 增加这一行提示
+                        print("-" * 30)
 
-                if data:
-                    self.parse_and_print(data, target)
-                else:
-                    print("[!] 接口获取失败。可能频率过快或网络波动。")
-
-                action = None
-                if mode == '1':
-                    wait_time = 180 + random.randint(1, 5)
-                    for i in range(wait_time, 0, -1):
-                        print(f"\r倒计时 {i}s 后刷新 | [R]返回 [Q]退出 [M]转手动 [Enter]立即刷新  ", end="", flush=True)
-                        if msvcrt.kbhit():
-                            key = msvcrt.getch().lower()
-                            if key == b'\r': break
-                            if key == b'q': action = 'quit'; break
-                            if key == b'r': action = 'reset'; break
-                            if key == b'm': mode = '2'; break
-                        time.sleep(1)
-                else:
-                    print("\n[手动模式] 按 [Enter] 刷新 | [A] 转自动 | [R] 返回 | [Q] 退出")
-                    while True:
-                        if msvcrt.kbhit():
-                            key = msvcrt.getch().lower()
-                            if key == b'\r': break
-                            if key == b'q': action = 'quit'; break
-                            if key == b'r': action = 'reset'; break
-                            if key == b'a': mode = '1'; break
-                        time.sleep(0.1)
-
-                if action == 'quit': sys.exit()
-                if action == 'reset': break
+                        sel_from = input("输入精确始发站（按回车键跳过）: ").strip() or None
+                        sel_to = input("输入精确到达站（按回车键跳过）: ").strip() or None
+                        break
+                    if key == b'm':
+                        curr = self.config["dc_classification"]["default_mode"]
+                        self.config["dc_classification"]["default_mode"] = "smart" if curr == "official" else "official"
+                        self.save_config()
+                        break
+                    if key == b'c':
+                        type_filter, sel_from, sel_to = None, None, None
+                        break
+                    if key == b'r': return self.start()
+                    if key == b'q': sys.exit()
+                time.sleep(1)
 
 if __name__ == "__main__":
-    import os
-    os.system("title 12306余票查询与监控助手 v1.0.1 BY BH7GUL")
+    if os.name == 'nt': os.system('')
     app = TrainMonitor()
     app.start()
