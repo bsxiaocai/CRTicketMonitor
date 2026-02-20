@@ -1,6 +1,6 @@
 # 🚂 CRTicketMonitor 国铁余票查询与监控
 
-[![Python Version](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 这是一个轻量查询和监控12306余票的工具，使用Gemini辅助开发。
 
@@ -56,4 +56,5 @@ python main.py
 ``````
 
 ### 免责声明
+
 本工具仅用于学习交流编程技术。请勿用于任何商业用途，使用时请遵守 12306 官方平台的频率限制，避免由于请求过快导致 IP 被封禁。
