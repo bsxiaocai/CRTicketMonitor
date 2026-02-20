@@ -121,7 +121,7 @@ class TrainMonitor:
         while True:
             os.system('cls' if os.name == 'nt' else 'clear')
             print("\n" + "="*65)
-            print("=== 12306 余票查询与监控程序 ver 1.0.1 design by BH7GUL ===")
+            print("=== 12306 余票查询与监控助手 ver 1.0.1 design by BH7GUL ===")
             print("="*65)
             print(" [操作提示]: 输入 Q 退出程序 | 请输入正确的出发和到达的城市")
             print("-" * 65)
@@ -187,6 +187,6 @@ class TrainMonitor:
 
 if __name__ == "__main__":
     import os
-    os.system("title 12306余票监控助手 v1.0.1 BY BH7GUL")
+    os.system("title 12306余票查询与监控助手 v1.0.1 BY BH7GUL")
     app = TrainMonitor()
     app.start()
