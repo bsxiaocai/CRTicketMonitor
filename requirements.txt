@@ -1,2 +1,3 @@
-requests
-prettytable
+requests>=2.25.0
+prettytable>=2.0.0
+win10toast>=0.9

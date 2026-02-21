@@ -1,8 +1,45 @@
 {
     "dc_classification": {
-        "description": "official: DC全归为动车; smart: 仅CD字头1-899归为普通车",
-        "default_mode": "smart",
+        "default_mode": "official",
         "smart_threshold": 899,
-        "custom_mapping": {}
-    }
+        "custom_mapping": {},
+        "description": "official: DC全归为动车; smart: 仅CD字头1-899归为普通车"
+    },
+    "notification": {
+        "enabled": true,
+        "cooldown_seconds": 300,
+        "only_target_trains": false,
+        "min_tickets": 1,
+        "channels": {
+            "windows_desktop": {
+                "enabled": true,
+                "description": "Windows 原生 Toast 通知"
+            },
+            "wechat_work": {
+                "enabled": false,
+                "webhook_url": "",
+                "description": "企业微信机器人 Webhook URL"
+            },
+            "feishu": {
+                "enabled": false,
+                "webhook_url": "",
+                "description": "飞书机器人 Webhook URL"
+            },
+            "dingtalk": {
+                "enabled": false,
+                "webhook_url": "",
+                "secret": "",
+                "description": "钉钉机器人 Webhook URL 和签名密钥"
+            }
+        }
+    },
+    "logging": {
+        "level": "INFO",
+        "max_size_mb": 10,
+        "backup_count": 5,
+        "console_output": false,
+        "log_query_history": true
+    },
+    "version": "1.2.0",
+    "description": "CRTicketMonitor 配置文件"
 }
