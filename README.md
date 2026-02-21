@@ -2,7 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-这是一个轻量查询和监控12306余票的工具，使用Gemini、cChatGPT、GLM等AI工具辅助开发。该工具目前尚在完善之中，作者代码水平不高，学习的时间较长，遇到问题还请多多见谅！
+这是一个轻量查询和监控12306余票的工具，使用Gemini、ChatGPT、GLM等AI工具辅助开发。该工具目前尚在完善之中，作者代码水平不高，学习的时间较长，遇到问题还请多多见谅！
 
 ---
 
@@ -51,16 +51,32 @@ python main.py
 
 ### 目录结构
 ``````bash
-.
-├── main.py                # 程序主逻辑代码
-├── requirements.txt       # 依赖库清单
-├── config.json            # 项目配置文件
-├── README.md              # 项目说明文档
-├── CRTicketMonitor.spec   # PyInstaller 打包配置
-├── railway.ico            # 程序图标
-├── logger/                # 日志系统模块
-├── notification/          # 通知系统模块
-└── station_codes.json     # 运行后自动生成的车站缓存数据
+CRTicketMonitor/
+├── .gitignore                    # Git 忽略规则
+├── config.json                   # 默认配置
+├── CRTicketMonitor.spec          # PyInstaller 封装配置
+├── LICENSE                       # 许可证
+├── main.py                       # 主程序入口
+├── railway.ico                   # 程序图标
+├── README.md                     # 项目说明文档
+├── requirements.txt              # Python 依赖列表
+│
+├── logger/                       # 日志模块
+│   ├── __init__.py
+│   ├── query_history.py
+│   ├── ticket_logger.py
+│   └── README.txt
+│
+├── notification/                 # 通知模块
+│   ├── __init__.py
+│   ├── base.py
+│   ├── channels.py
+│   ├── manager.py
+│   └── README.txt
+│
+└── past_version/                 # 历史版本
+    ├── README.txt
+    └── main_v1.0.1.py
 ``````
 
 ### 免责声明
