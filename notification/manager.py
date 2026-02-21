@@ -17,6 +17,7 @@ class NotificationManager:
         """
         self.channels: List[NotificationChannel] = []
         self.last_notified: Dict[str, float] = {}  # {train_no: timestamp}
+        self.monitored_trains: set = set()  # 新增：已发现的有票车次
         # 只传递 NotificationConfig 定义的参数
         self.config = NotificationConfig(**{
             'enabled': config.get('enabled', True),
@@ -41,17 +42,27 @@ class NotificationManager:
         if not self.config.enabled:
             return {}
 
+        # 识别新发现的车次
+        current_trains = {ticket.train_no for ticket in tickets}
+        new_trains = current_trains - self.monitored_trains
+
         results = {}
         for ticket in tickets:
-            if self._should_notify(ticket):
-                results[ticket.train_no] = self._send_notification(ticket)
+            # 判断是否为新票（新票强制通知）
+            is_new = ticket.train_no in new_trains
+            if self._should_notify(ticket, force_notify=is_new):
+                results[ticket.train_no] = self._send_notification(ticket, is_new_ticket=is_new)
+
+        # 更新监控车次集合
+        self.monitored_trains.update(current_trains)
 
         return results
 
-    def _should_notify(self, ticket: TicketInfo) -> bool:
+    def _should_notify(self, ticket: TicketInfo, force_notify: bool = False) -> bool:
         """
         判断是否应该发送通知
         :param ticket: 车票信息
+        :param force_notify: 是否强制通知（忽略冷却时间）
         :return: 是否应该通知
         """
         # 检查是否只通知目标车次
@@ -59,10 +70,11 @@ class NotificationManager:
             if not self.config.target_trains or ticket.train_no not in self.config.target_trains:
                 return False
 
-        # 冷却时间检查
-        last_time = self.last_notified.get(ticket.train_no, 0)
-        if time.time() - last_time < self.config.cooldown_seconds:
-            return False
+        # 冷却时间检查（新票忽略）
+        if not force_notify:
+            last_time = self.last_notified.get(ticket.train_no, 0)
+            if time.time() - last_time < self.config.cooldown_seconds:
+                return False
 
         # 最小余票数量检查
         total_tickets = sum(int(v) if v.isdigit() else 99 for v in ticket.available_seats.values())
@@ -71,13 +83,17 @@ class NotificationManager:
 
         return True
 
-    def _send_notification(self, ticket: TicketInfo) -> Dict[str, str]:
+    def _send_notification(self, ticket: TicketInfo, is_new_ticket: bool = False) -> Dict[str, str]:
         """
         发送通知到所有可用渠道
         :param ticket: 车票信息
+        :param is_new_ticket: 是否为新发现有票的车次
         :return: 各渠道发送结果 {channel_name: result}
         """
-        title = f"【CRTicketMonitor】{ticket.train_no} 有票啦！"
+        if is_new_ticket:
+            title = f"【新发现有票】{ticket.train_no} 有票啦！"
+        else:
+            title = f"【CRTicketMonitor】{ticket.train_no} 有票啦！"
         message = self._format_ticket_message(ticket)
 
         results = {}
@@ -112,3 +128,7 @@ class NotificationManager:
         :return: 可用渠道名称列表
         """
         return [c.name for c in self.channels if c.is_available()]
+
+    def get_monitored_count(self) -> int:
+        """获取当前监控的车次数量"""
+        return len(self.monitored_trains)

@@ -8,8 +8,53 @@ import hmac
 import hashlib
 import base64
 import urllib.parse
+import subprocess
 from typing import Optional
 from .base import NotificationChannel, TicketInfo
+
+
+class NativeWindowsNotification(NotificationChannel):
+    """Windows 原生通知 (使用 PowerShell，无需额外依赖）"""
+
+    def __init__(self):
+        pass
+
+    @property
+    def name(self) -> str:
+        return "Windows原生通知"
+
+    def send(self, title: str, message: str, ticket_info: Optional[TicketInfo] = None) -> bool:
+        """
+        使用 PowerShell 发送 Windows Toast 通知
+        Windows 10/11 原生支持，无需额外依赖
+        """
+        try:
+            # 转义特殊字符
+            safe_title = title.replace('"', '`"').replace("'", "''")
+            safe_message = message.replace('"', '`"').replace("'", "''")
+
+            # PowerShell 命令显示 Toast 通知
+            ps_script = f'''
+Add-Type -AssemblyName PresentationFramework,PresentationCore -TypeName System.Windows
+[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications.ToastNotificationManager]::new().CreateToastNotifier($null)
+$toast = $notifier.Show($null, $null, "{safe_title}", "{safe_message}")
+'''
+
+            # 在后台执行 PowerShell 命令
+            subprocess.run(
+                ['powershell', '-WindowStyle', 'Hidden', '-Command', ps_script],
+                shell=False,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                timeout=5,
+                stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL
+            )
+            return True
+        except Exception as e:
+            return False
+
+    def is_available(self) -> bool:
+        return True  # Windows 系统自带，始终可用
 
 
 class WindowsDesktopNotification(NotificationChannel):
