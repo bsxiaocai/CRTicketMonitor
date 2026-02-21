@@ -11,7 +11,7 @@ from prettytable import PrettyTable
 
 # 新增：导入日志和通知模块
 from logger import TicketLogger, QueryHistory
-from notification import NotificationManager, WindowsDesktopNotification, TicketInfo
+from notification import NotificationManager, NativeWindowsNotification, TicketInfo
 
 
 class TrainMonitor:
@@ -24,7 +24,7 @@ class TrainMonitor:
 
         # 新增：初始化日志
         self.logger = TicketLogger(self.log_dir, {})
-        self.logger.log_startup("1.2.0")
+        self.logger.log_startup("1.2.1")
 
         # 新增：初始化查询历史记录
         self.query_history = QueryHistory(self.log_dir)
@@ -94,16 +94,9 @@ class TrainMonitor:
                 }
                 self.notification_manager = NotificationManager(notif_config_filtered)
 
-                # Windows 桌面通知
-                self.notification_manager.register_channel(
-                    WindowsDesktopNotification(icon_path=icon_path if os.path.exists(icon_path) else None)
-                )
-
-                available_channels = self.notification_manager.get_available_channels()
-                if available_channels:
-                    self.logger.info(f"通知渠道已启用: {', '.join(available_channels)}")
-                else:
-                    self.logger.warning("无可用的通知渠道")
+                # 直接使用 Windows 原生通知（无需外部依赖）
+                self.notification_manager.register_channel(NativeWindowsNotification())
+                self.logger.info("通知渠道已启用: Windows原生通知")
         except Exception as e:
             self.logger.error(f"通知系统初始化失败: {e}", exc_info=True)
 
@@ -311,7 +304,7 @@ class TrainMonitor:
     def start(self):
         os.system('cls' if os.name == 'nt' else 'clear')
         print("\n" + "="*65)
-        print("=== 12306 余票查询与监控助手 ver 1.2.0 design by BH7GUL ===")
+        print("=== 12306 余票查询与监控助手 ver 1.2.1 design by BH7GUL ===")
         print("="*65)
 
         f_st = input("1. 始发城市/站: ").strip()
@@ -362,8 +355,21 @@ class TrainMonitor:
 
                 # 新增：发送通知
                 if self.notification_manager and available_tickets:
+                    # 获取当前监控车次数量（通知前）
+                    monitored_before = self.notification_manager.get_monitored_count()
+
                     self.logger.info(f"发现 {len(available_tickets)} 个有票车次: {train_list}")
                     results = self.notification_manager.notify_ticket_available(available_tickets)
+
+                    # 获取新增的监控车次数量
+                    monitored_after = self.notification_manager.get_monitored_count()
+                    new_count = monitored_after - monitored_before
+
+                    # 显示监控信息
+                    print(f"\n[监控信息] 当前监控 {monitored_after} 个有票车次，本次发现 {len(available_tickets)} 个有票车次")
+                    if new_count > 0:
+                        print(f"[新发现] {new_count} 个新车次有票！（已发送强提醒）")
+
                     # 记录通知结果
                     for train_no, channel_results in results.items():
                         self.logger.debug(f"  {train_no} 通知结果: {channel_results}")
