@@ -2,7 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-这是一个轻量查询和监控12306余票的工具，使用Gemini、cChatGPT、GLM等AI工具辅助开发。该工具目前尚在完善之中，作者代码水平不高，学习的时间较长，遇到问题还请多多见谅！
+这是一个轻量查询和监控12306余票的工具，使用Gemini、ChatGPT、GLM等AI工具辅助开发。该工具目前尚在完善之中，作者代码水平不高，学习的时间较长，遇到问题还请多多见谅！
 
 ---
 
