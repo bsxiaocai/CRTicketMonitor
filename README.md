@@ -42,16 +42,23 @@ python main.py
 3. 操作指令：
 - `R`: 放弃当前监控，返回初始界面重新输入。
 - `Q`: 安全退出程序。
-- `M`: 从自动刷新切换到手动模式。
-- `M`: 从手动模式切换回自动刷新。
-- `Enter`: 在任何模式下立即强制刷新一次。
+- `M`: 切换动集的识别模式（官方模式-DC为高铁动车/智能模式-DC低号段为普通车）。
+- `S`: 筛选车型（全部/高铁动车/普通车）。
+- `F`: 筛选站点（同城站点）。
+- `E`: 导出车次结果。
+- `Enter`: 立即刷新一次。
 
 ### 目录结构
 ``````bash
 .
 ├── main.py                # 程序主逻辑代码
 ├── requirements.txt       # 依赖库清单
+├── config.json            # 项目配置文件
 ├── README.md              # 项目说明文档
+├── CRTicketMonitor.spec   # PyInstaller 打包配置
+├── railway.ico            # 程序图标
+├── logger/                # 日志系统模块
+├── notification/          # 通知系统模块
 └── station_codes.json     # 运行后自动生成的车站缓存数据
 ``````
 
