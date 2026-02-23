@@ -23,10 +23,12 @@ wheels/
 # PyInstaller
 *.spec
 *.spec~
+*.exe
 
 # 日志文件
 logs/
 *.log
+*.log.*
 
 # 编辑器
 .vscode/
@@ -42,12 +44,14 @@ desktop.ini
 
 # 测试相关
 test_all.py
+test_new_features.py
 .pytest_cache/
 .coverage
 htmlcov/
 
 # 运行时生成
 station_codes.json
+query_history.jsonl
 *.db
 *.sqlite
 
@@ -55,3 +59,10 @@ station_codes.json
 *.tmp
 *.bak
 *.backup
+main.py.bak
+
+# 文档文件（功能说明文档已融入README.md）
+FUNCTION_UPDATE.md
+IMPLEMENTATION_SUMMARY.md
+RELEASE_v2.0.md
+nul
