@@ -7,11 +7,11 @@ import sys
 import msvcrt
 import atexit
 from datetime import datetime
-from prettytable import PrettyTable
+from prettytable import PrettyTable # 表格显示
 
-# 新增：导入日志和通知模块
-from logger import TicketLogger, QueryHistory
-from notification import NotificationManager, NativeWindowsNotification, TicketInfo
+# 日志与通知模块
+from logger import TicketLogger, QueryHistory  # 日志记录和查询历史
+from notification import NotificationManager, NativeWindowsNotification, TicketInfo # 通知管理器和票务信息类
 
 
 class TrainMonitor:
@@ -157,6 +157,7 @@ class TrainMonitor:
 
         self.code_to_name = {code: name for name, code in self.station_dict.items()}
 
+    ### 对C/D字头的智能识别逻辑（国铁对动力集中型动车组列车的定义差异） ###
     def classify_train(self, train_no):
         """后台判断逻辑"""
         conf = self.config["dc_classification"]
