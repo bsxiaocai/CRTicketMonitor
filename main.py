@@ -24,7 +24,7 @@ class TrainMonitor:
 
         # 新增：初始化日志
         self.logger = TicketLogger(self.log_dir, {})
-        self.logger.log_startup("1.2.1")
+        self.logger.log_startup("2.0.0")
 
         # 新增：初始化查询历史记录
         self.query_history = QueryHistory(self.log_dir)
@@ -821,7 +821,7 @@ class TrainMonitor:
     def start_query(self):
         os.system('cls' if os.name == 'nt' else 'clear')
         print("\n" + "="*65)
-        print("=== 12306 余票查询与监控助手 ver 1.2.1 design by BH7GUL ===")
+        print("=== 12306 余票查询与监控助手 ver 2.0 design by BH7GUL ===")
         print("="*65)
 
         f_st = input("1. 始发城市/站: ").strip()
