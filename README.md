@@ -149,31 +149,61 @@ python main.py
 
 ```
 CRTicketMonitor/
-├── .gitignore                    # Git 忽略规则
-├── config.json                   # 默认配置
-├── CRTicketMonitor.spec          # PyInstaller 封装配置
-├── LICENSE                       # 许可证
-├── main.py                       # 主程序入口
-├── railway.ico                   # 程序图标
-├── README.md                     # 项目说明文档
-├── requirements.txt              # Python 依赖列表
+├── main.py                    # 主程序入口
+├── CRTicketMonitor.spec       # PyInstaller打包配置文件
+├── config.json               # 程序配置文件
+├── station_codes.json        # 车站代码缓存文件
+├── railway.ico               # 程序图标
+├── requirements.txt          # Python依赖列表
+├── setup.py                  # 安装配置
 │
-├── logger/                       # 日志模块
+├── core/                     # 核心功能模块
 │   ├── __init__.py
-│   ├── query_history.py          # 查询历史记录
-│   ├── ticket_logger.py          # 票务日志记录
-│   └── README.txt
+│   ├── ticket_api.py         # 12306 API请求模块
+│   ├── ticket_parser.py      # 票务信息解析模块
+│   ├── train_classifier.py   # 车次分类器
+│   └── time_filter.py        # 时间筛选器
 │
-├── notification/                 # 通知模块
+├── ui/                       # 用户界面模块
 │   ├── __init__.py
-│   ├── base.py                   # 通知基类
-│   ├── channels.py               # 通知渠道实现
-│   ├── manager.py                # 通知管理器
-│   └── README.txt
+│   ├── cli_menu.py           # 命令行菜单
+│   ├── display.py            # 显示模块
+│   └── filter_menu.py        # 筛选菜单
 │
-└── past_version/                 # 历史版本
-    ├── README.txt
-    └── main_v1.0.1.py
+├── services/                 # 业务服务模块
+│   ├── __init__.py
+│   ├── query_service.py      # 查询服务
+│   └── export_service.py     # 导出服务
+│
+├── config/                   # 配置管理模块
+│   ├── __init__.py
+│   └── config_manager.py     # 配置管理器
+│
+├── logger/                   # 日志模块
+│   ├── __init__.py
+│   ├── ticket_logger.py      # 日志记录器
+│   └── query_history.py      # 查询历史记录
+│
+├── notification/             # 通知模块
+│   ├── __init__.py
+│   ├── base.py               # 通知基类
+│   ├── channels.py           # 通知渠道实现
+│   └── manager.py            # 通知管理器
+│
+├── test/                     # 测试模块
+│   ├── __init__.py
+│   └── test_all.py           # 测试文件
+│
+├── past_version/             # 历史版本
+│   ├── README.txt
+│   └── main_v1.0.1.py        # v1.0.1版本源码
+│
+├── build/                    # 打包中间文件（自动生成）
+│   └── CRTicketMonitor/      # PyInstaller构建目录
+│
+└── dist/                     # 打包输出目录
+    ├── CRTicketMonitor.exe   # 打包后的可执行文件
+    └── config.json           # 配置文件副本
 ```
 
 ---
