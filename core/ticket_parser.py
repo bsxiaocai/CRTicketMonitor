@@ -21,7 +21,7 @@ class TicketParser:
         """
         解析并打印车票信息
         :param raw_data: 原始数据列表
-        :param ticket_info_list: TicketInfo列表（用于导出）
+        :param ticket_info_list: TicketInfo 列表（用于导出）
         :param target_trains: 目标车次列表
         :param type_filter: 车型筛选
         :param sel_from: 始发站筛选
@@ -34,11 +34,11 @@ class TicketParser:
         :param code_to_name: 代码到名称映射
         :param classify_func: 车次分类函数
         :param return_table: 是否返回表格字符串（而非直接打印）
-        :return: 车票列表，如果return_table=True则返回(table_str, tickets)
+        :return: 车票列表，如果 return_table=True 则返回 (table_str, tickets)
         """
         table = PrettyTable()
         table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商/特", "一等座", "二等座",
-                            "一等/软卧", "二等/硬卧", "软座", "硬座", "无座"]
+                            "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"]
 
         available_tickets = []
         all_tickets = []
@@ -82,23 +82,26 @@ class TicketParser:
             seats = {'商/特': sw, '一等座': yd, '二等座': ed,
                     '一等/软卧': y_wo, '二等/硬卧': e_wo, '软座': rz, '硬座': yz, '无座': wz}
 
-            # 基础着色逻辑（非S字头：有任意票即绿）
-            has_ticket = any(s not in ['无', '--', '', '0'] for s in [sw, yd, ed, y_wo, e_wo, rz, yz])
-
-            # S字头特殊逻辑
+            # S 字头特殊逻辑：当只有二等座、无座两种席位时，任一有票即认定为有票
             if train_no.upper().startswith('S'):
-                is_green = False
-                ed_has = ed not in ['无', '--', '', '0']
-                wz_has = wz not in ['无', '--', '', '0']
+                # 检查是否只有二等座和无座席位（其他席位都是"--"）
+                only_ed_wz = (sw == "--" and yd == "--" and y_wo == "--" and e_wo == "--" and rz == "--" and yz == "--")
 
-                # 情况1: 有二等座或无座席位，且任一有票
-                if (ed != "--" or wz != "--") and (ed_has or wz_has):
-                    is_green = True
-                # 情况2: 只有无座席位且有票
-                elif (ed == "--" and yd == "--" and rz == "--" and wz != "--") and wz_has:
-                    is_green = True
+                if only_ed_wz:
+                    # 只有二等座和无座时，任一有票即认定为有票
+                    ed_has = ed not in ['无', '--', '', '0']
+                    wz_has = wz not in ['无', '--', '', '0']
+                    has_ticket = ed_has or wz_has
+                else:
+                    # 有其他席位时，使用基础逻辑
+                    has_ticket = any(s not in ['无', '--', '', '0'] for s in [sw, yd, ed, y_wo, e_wo, rz, yz, wz])
+            else:
+                # 基础着色逻辑（非 S 字头：有任意票即绿）
+                has_ticket = any(s not in ['无', '--', '', '0'] for s in [sw, yd, ed, y_wo, e_wo, rz, yz])
 
-                if is_green:
+            # 着色处理
+            if train_no.upper().startswith('S'):
+                if has_ticket:
                     row[0] = f"\033[92m{train_no}\033[0m"
             else:
                 if has_ticket:
@@ -114,6 +117,7 @@ class TicketParser:
                     to_station=t_st_name,
                     date=date,
                     departure_time=d[8],
+                    arrival_time=d[9],
                     duration=d[10],
                     available_seats=available_seats if has_ticket else {}
                 )

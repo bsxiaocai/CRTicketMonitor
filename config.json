@@ -3,7 +3,7 @@
         "default_mode": "official",
         "smart_threshold": 899,
         "custom_mapping": {},
-        "description": "official: DC全归为动车; smart: 仅CD字头1-899归为普通车"
+        "description": "official: DC 全归为动车; smart: 仅 CD 字头 1-899 归为普通车"
     },
     "notification": {
         "enabled": true,
@@ -40,6 +40,11 @@
         "console_output": false,
         "log_query_history": true
     },
-    "version": "2.0",
-    "description": "CRTicketMonitor 配置文件"
+    "auto_open_12306": false,
+    "gui": {
+        "default_monitor_interval": 30,
+        "theme": "light"
+    },
+    "version": "2.2",
+    "description": "CRTicketMonitor 配置文件 - GUI 版本"
 }

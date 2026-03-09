@@ -44,7 +44,7 @@ class CLIMenu:
         while True:
             os.system('cls' if os.name == 'nt' else 'clear')
             print("\n" + "="*65)
-            print("=== 12306 余票查询与监控助手 ver 2.1.0 design by BH7GUL ===")
+            print("=== 12306 余票查询与监控助手 ver 2.2.0 design by BH7GUL ===")
             print("="*65)
             print("\n启动主菜单")
             print("-" * 65)

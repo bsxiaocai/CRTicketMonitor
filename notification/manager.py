@@ -3,21 +3,24 @@
 """
 
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional, Callable
 from .base import NotificationChannel, TicketInfo, NotificationConfig
 
 
 class NotificationManager:
     """通知管理器"""
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict,
+                 on_ticket_found_callback: Optional[Callable] = None):
         """
         初始化通知管理器
         :param config: 通知配置字典
+        :param on_ticket_found_callback: 有票时的回调函数
         """
         self.channels: List[NotificationChannel] = []
         self.last_notified: Dict[str, float] = {}  # {train_no: timestamp}
-        self.monitored_trains: set = set()  # 新增：已发现的有票车次
+        self.monitored_trains: set = set()  # 已发现的有票车次
+        self.on_ticket_found_callback = on_ticket_found_callback
         # 只传递 NotificationConfig 定义的参数
         self.config = NotificationConfig(**{
             'enabled': config.get('enabled', True),
@@ -103,7 +106,14 @@ class NotificationManager:
                     success = channel.send(title, message, ticket)
                     results[channel.name] = "成功" if success else "失败"
                 except Exception as e:
-                    results[channel.name] = f"异常: {e}"
+                    results[channel.name] = f"异常：{e}"
+
+        # 调用回调函数（用于 GUI 通知）
+        if self.on_ticket_found_callback:
+            try:
+                self.on_ticket_found_callback(ticket)
+            except Exception as e:
+                print(f"回调函数执行失败：{e}")
 
         self.last_notified[ticket.train_no] = time.time()
         return results
@@ -115,10 +125,10 @@ class NotificationManager:
         :return: 格式化的消息字符串
         """
         seats_text = "\n".join([f"  - {k}: {v}" for k, v in ticket.available_seats.items()])
-        return f"""车次: {ticket.train_no}
-日期: {ticket.date}
-路线: {ticket.from_station} → {ticket.to_station}
-时间: {ticket.departure_time} (历时: {ticket.duration})
+        return f"""车次：{ticket.train_no}
+日期：{ticket.date}
+路线：{ticket.from_station} → {ticket.to_station}
+时间：{ticket.departure_time} (历时：{ticket.duration})
 有票坐席:
 {seats_text}"""
 

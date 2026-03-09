@@ -28,6 +28,11 @@ class ConfigManager:
             "backup_count": 5,
             "console_output": False,
             "log_query_history": True
+        },
+        "auto_open_12306": False,
+        "gui": {
+            "default_monitor_interval": 30,
+            "theme": "light"
         }
     }
 

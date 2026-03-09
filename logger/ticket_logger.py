@@ -73,7 +73,7 @@ class TicketLogger:
 
         return logger
 
-    def log_startup(self, version: str = "2.1.0"):
+    def log_startup(self, version: str = "2.2.0"):
         """记录启动信息"""
         self.logger.info("=" * 60)
         self.logger.info("CRTicketMonitor 启动")

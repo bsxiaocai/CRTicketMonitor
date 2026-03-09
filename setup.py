@@ -6,7 +6,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="CRTicketMonitor",
-    version="2.1.0",
+    version="2.2.0",
     description="12306余票监控工具",
     author="BH7GUL",
     author_email="",

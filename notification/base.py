@@ -16,6 +16,7 @@ class TicketInfo:
     to_station: str        # 到达站
     date: str              # 出发日期
     departure_time: str    # 开车时间
+    arrival_time: str      # 到达时间
     duration: str          # 历时
     available_seats: Dict[str, str]  # {坐席类型: 余票数量}
 
