@@ -211,3 +211,26 @@ class StationSearchService:
         :return: 车站代码，找不到返回空字符串
         """
         return self.station_dict.get(station_name, "")
+
+    def get_stations_by_city(self, city_name: str) -> List[str]:
+        """
+        根据城市名获取该城市的所有车站
+        :param city_name: 城市名（如"长沙"、"北京"）
+        :return: 该城市的所有车站列表
+        """
+        if not city_name:
+            return []
+
+        results = []
+        # 匹配包含城市名的车站（如"长沙"匹配"长沙"、"长沙南"、"长沙西"）
+        for station in self.station_names:
+            if station.startswith(city_name):
+                results.append(station)
+
+        # 如果没有找到（可能是输入不完整），尝试模糊匹配
+        if not results:
+            for station in self.station_names:
+                if city_name in station:
+                    results.append(station)
+
+        return sorted(list(set(results)))

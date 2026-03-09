@@ -13,10 +13,13 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QDateEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QFileDialog, QGroupBox, QSpinBox, QComboBox,
     QTextEdit, QFrame, QTabWidget, QMenuBar, QMenu, QApplication, QListWidget,
-    QDialog
+    QDialog, QSplitter, QScrollArea
 )
 from PySide6.QtCore import Qt, QTimer, QDate, Signal
 from PySide6.QtGui import QColor, QFont, QAction
+
+from ui.gui.filter_panel import FilterPanel
+from core.train_classifier import TrainClassifier
 
 
 class QueryResultWidget(QWidget):
@@ -28,9 +31,11 @@ class QueryResultWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.favorites = []  # 当前收藏列表
-        self.current_data = []  # 当前表格数据（用于排序）
+        self.current_data = []  # 当前表格数据（用于排序和筛选）
+        self.filtered_data = []  # 筛选后的数据
         self.sort_column = -1  # 当前排序列
         self.sort_order = Qt.AscendingOrder  # 当前排序顺序
+        self.filter_config = {}  # 当前筛选配置
         self.init_ui()
 
     def init_ui(self):
@@ -39,26 +44,16 @@ class QueryResultWidget(QWidget):
 
         # 创建表格
         self.table = QTableWidget()
-        self.table.setColumnCount(14)
+        self.table.setColumnCount(14)  # 去掉"类型"列
         self.table.setHorizontalHeaderLabels([
-            "车次", "始发站", "到达站", "开点", "到点", "历时",
+            "车次", "出发站", "到达站", "开点", "到点", "历时",
             "商务座/特等座", "一等座", "二等座", "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"
         ])
 
-        # 设置列宽
+        # 设置列宽 - 均匀分布
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 车次
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # 始发站
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # 到达站
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # 开点
-        header.setSectionResizeMode(4, QHeaderView.Stretch)  # 到点
-        header.setSectionResizeMode(5, QHeaderView.Stretch)  # 历时
-        header.setSectionResizeMode(6, QHeaderView.Stretch)  # 商/特
-        header.setSectionResizeMode(7, QHeaderView.Stretch)  # 一等座
-        header.setSectionResizeMode(8, QHeaderView.Stretch)  # 二等座
-        header.setSectionResizeMode(9, QHeaderView.Stretch)  # 软卧/动卧/一等卧
-        header.setSectionResizeMode(10, QHeaderView.Stretch)  # 硬卧/二等卧
-        header.setSectionResizeMode(11, QHeaderView.Stretch)  # 软座
+        for i in range(self.table.columnCount()):
+            header.setSectionResizeMode(i, QHeaderView.Stretch)
 
         # 启用表头点击排序
         header.setSectionsClickable(True)
@@ -76,7 +71,7 @@ class QueryResultWidget(QWidget):
 
     def _on_header_clicked(self, logical_index):
         """处理表头点击事件"""
-        # logical_index: 0=车次，1=始发站，2=到达站，3=开点，4=到点，5=历时
+        # logical_index: 3=开点，4=到点，5=历时
         # 只允许点击 3-5 列（开点、到点、历时）进行排序
         if logical_index in [3, 4, 5]:
             # 切换排序顺序
@@ -88,6 +83,9 @@ class QueryResultWidget(QWidget):
 
             # 执行排序
             self._sort_data(logical_index)
+
+            # 更新表头显示（添加排序箭头）
+            self._update_header_labels()
 
     def _time_to_minutes(self, t: str) -> int:
         """将 HH:MM 格式转换为分钟数"""
@@ -146,14 +144,124 @@ class QueryResultWidget(QWidget):
         reverse = (self.sort_order == Qt.DescendingOrder)
         self.current_data.sort(key=get_sort_key, reverse=reverse)
 
+        # 重新应用筛选（排序可能改变顺序）
+        self._filter_data()
+
         # 刷新表格显示
         self._refresh_table()
+
+    def _update_header_labels(self):
+        """更新表头标签，显示排序箭头"""
+        labels = ["车次", "出发站", "到达站", "开点", "到点", "历时",
+                  "商务座/特等座", "一等座", "二等座", "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"]
+
+        for i in range(len(labels)):
+            if i == self.sort_column:
+                arrow = " ▲" if self.sort_order == Qt.AscendingOrder else " ▼"
+                self.table.horizontalHeaderItem(i).setText(labels[i] + arrow)
+            else:
+                self.table.horizontalHeaderItem(i).setText(labels[i])
+
+    def apply_filters(self, filter_config: dict):
+        """应用筛选条件"""
+        self.filter_config = filter_config
+        # 只有在有筛选配置且配置不为空时才应用筛选
+        if filter_config:
+            self._filter_data()
+        else:
+            # 没有筛选配置时，显示全部
+            self.filtered_data = self.current_data.copy()
+        self._refresh_table()
+
+    def _filter_data(self):
+        """筛选数据（修复席别筛选、时段筛选和车型筛选）"""
+        self.filtered_data = []
+
+        # 获取筛选配置
+        train_types = self.filter_config.get('train_types', [])
+        from_stations = self.filter_config.get('from_stations', [])
+        to_stations = self.filter_config.get('to_stations', [])
+        seat_types = self.filter_config.get('seat_types', [])
+        time_period = self.filter_config.get('time_period', '00:00-24:00')
+        show_fuxing = self.filter_config.get('show_fuxing', True)
+        show_smart = self.filter_config.get('show_smart', True)
+
+        for item in self.current_data:
+            # 车次类型筛选
+            train_type = item.get('train_type', '其他')
+            if train_types and train_type not in train_types:
+                continue
+
+            # 出发站筛选
+            from_station = item.get('from_station', '')
+            if from_stations and from_station not in from_stations:
+                continue
+
+            # 到达站筛选
+            to_station = item.get('to_station', '')
+            if to_stations and to_station not in to_stations:
+                continue
+
+            # 席别筛选 - 修复字段映射
+            has_seat = False
+            seat_mapping = {
+                'business': item.get('business_seat', '--'),
+                'first': item.get('first_seat', '--'),
+                'second': item.get('second_seat', '--'),
+                'soft_sleeper': item.get('soft_sleeper', '--'),  # 软卧/动卧/一等卧
+                'hard_sleeper': item.get('hard_sleeper', '--'),  # 硬卧/二等卧
+                'soft_seat': item.get('soft_seat', '--'),  # 软座
+                'hard_seat': item.get('hard_seat', '--'),  # 硬座
+                'no_seat': item.get('no_seat', '--'),
+            }
+
+            # 检查是否有选中的席别有票
+            for seat_key in seat_types:
+                seat_value = seat_mapping.get(seat_key, '--')
+                if seat_value not in ['--', '', '无', '0', '无票']:
+                    has_seat = True
+                    break
+
+            # 如果勾选了席别但没有匹配的席别有票，过滤掉该车次
+            if seat_types and not has_seat:
+                continue
+
+            # 发车时段筛选
+            if time_period != '00:00-24:00':
+                departure_time = item.get('departure_time', '')
+                if departure_time and departure_time != '--':
+                    try:
+                        h = int(departure_time.split(':')[0])
+                        start, end = time_period.split('-')
+                        start_h = int(start.split(':')[0])
+                        end_h = int(end.split(':')[0])
+                        if not (start_h <= h < end_h):
+                            continue
+                    except Exception:
+                        pass
+
+            # 复兴号/智能动车组筛选
+            is_fuxing = item.get('is_fuxing', False)
+            is_smart = item.get('is_smart', False)
+
+            # 如果不显示复兴号且该车次是复兴号，过滤掉
+            if not show_fuxing and is_fuxing:
+                continue
+
+            # 如果不显示智能动车组且该车次是智能动车组，过滤掉
+            if not show_smart and is_smart:
+                continue
+
+            self.filtered_data.append(item)
 
     def _refresh_table(self):
         """刷新表格显示（不改变数据）"""
         self.table.setRowCount(0)
 
-        for ticket in self.current_data:
+        # 始终使用 filtered_data 显示
+        data_to_show = self.filtered_data if self.filtered_data else self.current_data
+
+        for ticket in data_to_show:
             row_position = self.table.rowCount()
             self.table.insertRow(row_position)
 
@@ -161,8 +269,15 @@ class QueryResultWidget(QWidget):
             has_ticket = ticket.get('has_ticket', False)
             is_favorite = train_no.upper() in [f.upper() for f in self.favorites]
 
-            # 设置数据
-            self.table.setItem(row_position, 0, QTableWidgetItem(train_no))
+            # 构建车次显示（含"复"、"智"标识，用小字）
+            train_display = train_no
+            if ticket.get('is_fuxing', False):
+                train_display += " 复"
+            if ticket.get('is_smart', False):
+                train_display += " 智"
+
+            # 设置数据 - 注意列索引变化（去掉类型列后）
+            self.table.setItem(row_position, 0, QTableWidgetItem(train_display))
             self.table.setItem(row_position, 1, QTableWidgetItem(ticket.get('from_station', '--')))
             self.table.setItem(row_position, 2, QTableWidgetItem(ticket.get('to_station', '--')))
             self.table.setItem(row_position, 3, QTableWidgetItem(ticket.get('departure_time', '--')))
@@ -190,9 +305,11 @@ class QueryResultWidget(QWidget):
         if not train_no_item:
             return
 
-        train_no = train_no_item.text().strip()
+        # 获取车次号（去除"复"、"智"标识和空格）
+        train_no_raw = train_no_item.text().strip()
+        train_no_clean = train_no_raw.split()[0]
         # 去除颜色标记
-        train_no_clean = train_no.replace('\033[92m', '').replace('\033[93m', '').replace('\033[90m', '').replace('\033[0m', '')
+        train_no_clean = train_no_clean.replace('\033[92m', '').replace('\033[93m', '').replace('\033[90m', '').replace('\033[0m', '')
 
         # 检查是否已收藏
         is_favorite = train_no_clean.upper() in [f.upper() for f in self.favorites]
@@ -213,7 +330,9 @@ class QueryResultWidget(QWidget):
         row = index.row()
         train_no_item = self.table.item(row, 0)
         if train_no_item:
-            train_no = train_no_item.text().strip()
+            # 获取车次号（去除"复"、"智"标识和空格）
+            train_no_raw = train_no_item.text().strip()
+            train_no = train_no_raw.split()[0]
             # 去除颜色标记
             train_no = train_no.replace('\033[92m', '').replace('\033[93m', '').replace('\033[90m', '').replace('\033[0m', '')
             self.ticket_double_clicked.emit(train_no)
@@ -229,9 +348,10 @@ class QueryResultWidget(QWidget):
 
         self.favorites = favorites  # 保存收藏列表用于右键菜单
 
-        # 保存原始数据用于排序
+        # 保存原始数据用于排序和筛选
         # 排序：收藏车次优先
         self.current_data = sorted(tickets, key=lambda x: (x['train_no'].upper() not in [f.upper() for f in favorites], x['departure_time']))
+        self.filtered_data = self.current_data.copy()
 
         # 重置排序状态
         self.sort_column = -1
@@ -247,10 +367,11 @@ class QueryResultWidget(QWidget):
         :param has_ticket: 是否有票
         :param is_favorite: 是否收藏
         """
-        if has_ticket:
+        # 优先级：收藏 > 有票 > 默认
+        if is_favorite:
+            color = QColor(255, 255, 200)  # 黄色（收藏优先）
+        elif has_ticket:
             color = QColor(200, 255, 200)  # 绿色
-        elif is_favorite:
-            color = QColor(255, 255, 200)  # 黄色
         else:
             color = QColor(240, 240, 240)  # 灰色
 
@@ -278,20 +399,24 @@ class MainWindow(QMainWindow):
         self.current_monitor_task_id = None
         self.monitor_interval = 30  # 秒
 
-        # 查询历史栈（用于回退功能）
-        self.query_history_stack = []
-        self.max_history = 10  # 最多保存 10 条历史记录
-
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("12306 余票监控工具 v3.0.0")
-        self.setMinimumSize(1200, 800)
+        self.setWindowTitle("12306 车票查询与监控助手 v3.1.0")
+
+        # 窗口大小自适应屏幕（使用屏幕的 85%）
+        screen = QApplication.primaryScreen().availableGeometry()
+        window_width = int(screen.width() * 0.85)
+        window_height = int(screen.height() * 0.85)
+        self.resize(window_width, window_height)
+        # 居中显示
+        self.move((screen.width() - window_width) // 2, (screen.height() - window_height) // 2)
 
         # 创建中央 widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(5, 5, 5, 5)
 
         # 创建菜单栏
         self._create_menubar()
@@ -304,9 +429,18 @@ class MainWindow(QMainWindow):
         button_group = self._create_button_section()
         main_layout.addWidget(button_group)
 
+        # 结果区域（使用分割布局，左侧结果，右侧筛选）
+        result_layout = QHBoxLayout()
+
         # 结果区域
         result_group = self._create_result_section()
-        main_layout.addWidget(result_group)
+        result_layout.addWidget(result_group, stretch=3)
+
+        # 筛选面板
+        filter_group = self._create_filter_section()
+        result_layout.addWidget(filter_group, stretch=1)
+
+        main_layout.addLayout(result_layout)
 
         # 状态栏
         self.statusBar().showMessage("就绪")
@@ -324,6 +458,12 @@ class MainWindow(QMainWindow):
         exit_action = QAction("退出", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        # 查询菜单
+        query_menu = menubar.addMenu("查询")
+        history_action = QAction("历史查询", self)
+        history_action.triggered.connect(self._show_history_dialog)
+        query_menu.addAction(history_action)
 
         # 编辑菜单
         edit_menu = menubar.addMenu("编辑")
@@ -351,7 +491,7 @@ class MainWindow(QMainWindow):
         # 出发站
         layout.addWidget(QLabel("出发站:"), 0, 0)
         self.from_station_input = QLineEdit()
-        self.from_station_input.setPlaceholderText("例如：北京（支持拼音首字母）")
+        self.from_station_input.setPlaceholderText("输入站名或拼音")
         self.from_station_input.textChanged.connect(self._on_from_station_changed)
         layout.addWidget(self.from_station_input, 0, 1)
 
@@ -359,41 +499,39 @@ class MainWindow(QMainWindow):
         self.from_station_btn = QPushButton("选择")
         self.from_station_btn.setMaximumWidth(50)
         self.from_station_btn.clicked.connect(lambda: self._show_station_selector(self.from_station_input))
-        layout.addWidget(self.from_station_btn, 0, 1, 1, 1, Qt.AlignRight)
+        layout.addWidget(self.from_station_btn, 0, 2)
 
         # 到达站
-        layout.addWidget(QLabel("到达站:"), 0, 2)
+        layout.addWidget(QLabel("到达站:"), 0, 3)
         self.to_station_input = QLineEdit()
-        self.to_station_input.setPlaceholderText("例如：上海（支持拼音首字母）")
+        self.to_station_input.setPlaceholderText("输入站名或拼音")
         self.to_station_input.textChanged.connect(self._on_to_station_changed)
-        layout.addWidget(self.to_station_input, 0, 3)
+        layout.addWidget(self.to_station_input, 0, 4)
 
         # 到达站选择按钮
         self.to_station_btn = QPushButton("选择")
         self.to_station_btn.setMaximumWidth(50)
         self.to_station_btn.clicked.connect(lambda: self._show_station_selector(self.to_station_input))
-        layout.addWidget(self.to_station_btn, 0, 3, 1, 1, Qt.AlignRight)
+        layout.addWidget(self.to_station_btn, 0, 5)
 
         # 日期
-        layout.addWidget(QLabel("日期:"), 0, 4)
+        layout.addWidget(QLabel("日期:"), 0, 6)
         self.date_picker = QDateEdit()
         self.date_picker.setCalendarPopup(True)
         self.date_picker.setDate(QDate.currentDate())
         self.date_picker.setMinimumDate(QDate.currentDate())
         self.date_picker.setMaximumDate(QDate.currentDate().addDays(15))
-        layout.addWidget(self.date_picker, 0, 5)
+        layout.addWidget(self.date_picker, 0, 7)
 
-        # 车次筛选
-        layout.addWidget(QLabel("车次筛选:"), 1, 0)
-        self.train_filter_input = QLineEdit()
-        self.train_filter_input.setPlaceholderText("例如：G100 G102（空格分隔，留空显示全部）")
-        layout.addWidget(self.train_filter_input, 1, 1)
+        # 打开 12306 按钮（替代车次号栏）
+        self.open_12306_button_inline = QPushButton("打开 12306")
+        self.open_12306_button_inline.clicked.connect(self._open_12306)
+        layout.addWidget(self.open_12306_button_inline, 1, 0, 1, 2)
 
-        # 座位筛选
-        layout.addWidget(QLabel("座位筛选:"), 1, 2)
-        self.seat_filter_combo = QComboBox()
-        self.seat_filter_combo.addItems(["全部", "商务座", "一等座", "二等座", "软卧", "硬卧", "无座"])
-        layout.addWidget(self.seat_filter_combo, 1, 3)
+        # 重置按钮
+        self.reset_button = QPushButton("重置查询与筛选")
+        self.reset_button.clicked.connect(self._reset_filters)
+        layout.addWidget(self.reset_button, 1, 2, 1, 6)
 
         # 车站补全列表（隐藏，用于自动补全）
         self.from_station_suggestions = QComboBox()
@@ -404,7 +542,20 @@ class MainWindow(QMainWindow):
         self.to_station_suggestions = QComboBox()
         self.to_station_suggestions.setMaximumHeight(30)
         self.to_station_suggestions.setVisible(False)
-        layout.addWidget(self.to_station_suggestions, 0, 3, 1, 1)
+        layout.addWidget(self.to_station_suggestions, 0, 4, 1, 1)
+
+        return group
+
+    def _create_filter_section(self) -> QGroupBox:
+        """创建筛选面板区域"""
+        group = QGroupBox("筛选")
+        layout = QVBoxLayout(group)
+
+        # 创建筛选面板
+        station_dict = self.station_search.station_dict if self.station_search else {}
+        self.filter_panel = FilterPanel(station_dict)
+        self.filter_panel.filter_changed.connect(self._on_filter_changed)
+        layout.addWidget(self.filter_panel)
 
         return group
 
@@ -414,24 +565,11 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 10, 0, 10)
 
-        # 回退按钮（初始隐藏）
-        self.back_button = QPushButton("返回")
-        self.back_button.setMinimumHeight(40)
-        self.back_button.clicked.connect(self._do_back)
-        self.back_button.setVisible(False)
-        layout.addWidget(self.back_button)
-
         # 查询按钮
         self.query_button = QPushButton("查询")
         self.query_button.setMinimumHeight(40)
         self.query_button.clicked.connect(self._do_query)
         layout.addWidget(self.query_button)
-
-        # 打开 12306 按钮
-        self.open_12306_button = QPushButton("打开 12306")
-        self.open_12306_button.setMinimumHeight(40)
-        self.open_12306_button.clicked.connect(self._open_12306)
-        layout.addWidget(self.open_12306_button)
 
         # 开始监控按钮
         self.start_monitor_button = QPushButton("开始监控")
@@ -459,10 +597,23 @@ class MainWindow(QMainWindow):
         group = QGroupBox("查询结果")
         layout = QVBoxLayout(group)
 
+        # 状态标签和筛选结果统计
+        status_widget = QWidget()
+        status_layout = QHBoxLayout(status_widget)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+
         # 状态标签
         self.status_label = QLabel("等待查询...")
         self.status_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(self.status_label)
+        status_layout.addWidget(self.status_label)
+
+        # 筛选结果统计标签
+        self.filter_result_label = QLabel("未筛选")
+        self.filter_result_label.setStyleSheet("color: #666666; font-size: 12px; margin-left: 20px;")
+        status_layout.addWidget(self.filter_result_label)
+
+        status_layout.addStretch()
+        layout.addWidget(status_widget)
 
         # 结果表格
         self.result_widget = QueryResultWidget()
@@ -530,6 +681,10 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout(dialog)
 
+        # 提示标签
+        hint_label = QLabel("请选择车站：")
+        layout.addWidget(hint_label)
+
         # 搜索框
         search_layout = QHBoxLayout()
         search_label = QLabel("搜索:")
@@ -543,11 +698,25 @@ class MainWindow(QMainWindow):
         station_list = QListWidget()
         station_list.setAlternatingRowColors(True)
 
-        # 获取所有车站
-        if self.station_search:
-            all_stations = sorted(self.station_search.station_dict.keys())
-            for station in all_stations[:500]:  # 限制显示数量
-                station_list.addItem(station)
+        # 根据目标输入框确定是出发站还是到达站，并过滤车站
+        is_from_station = (target_input == self.from_station_input)
+        city_name = target_input.text().strip()
+
+        # 获取车站列表（根据城市名过滤）
+        def populate_station_list(city=None):
+            station_list.clear()
+            if self.station_search:
+                if city:
+                    # 按城市过滤
+                    stations = self.station_search.get_stations_by_city(city)
+                else:
+                    # 显示所有车站
+                    stations = sorted(self.station_search.station_dict.keys())[:500]
+                for station in stations:
+                    station_list.addItem(station)
+
+        # 初始加载
+        populate_station_list(city_name if city_name else None)
 
         layout.addWidget(station_list)
 
@@ -571,11 +740,8 @@ class MainWindow(QMainWindow):
         def on_search_text_changed(text):
             station_list.clear()
             if not text:
-                # 显示所有车站（限制数量）
-                if self.station_search:
-                    all_stations = sorted(self.station_search.station_dict.keys())
-                    for station in all_stations[:500]:
-                        station_list.addItem(station)
+                # 显示所有车站或当前城市车站
+                populate_station_list(city_name if city_name else None)
             else:
                 # 搜索匹配的车站
                 if self.station_search:
@@ -600,6 +766,66 @@ class MainWindow(QMainWindow):
             target_input.setText(current_item.text())
             dialog.accept()
 
+    def _reset_filters(self):
+        """重置所有查询和筛选条件"""
+        # 清空输入
+        self.from_station_input.clear()
+        self.to_station_input.clear()
+        self.date_picker.setDate(QDate.currentDate())
+
+        # 重置筛选面板
+        if hasattr(self, 'filter_panel'):
+            self.filter_panel.reset_filters()
+
+        # 重置状态
+        self.status_label.setText("等待查询...")
+        self.statusBar().showMessage("已重置查询条件")
+
+    def _on_filter_changed(self):
+        """筛选条件变化，实时过滤"""
+        filter_config = self.filter_panel.get_filter_config()
+        self.result_widget.apply_filters(filter_config)
+
+        # 更新筛选结果统计
+        if hasattr(self, 'filter_result_label'):
+            total_count = len(self.result_widget.current_data)
+            filtered_count = len(self.result_widget.filtered_data)
+
+            # 检查是否有活跃的筛选条件
+            has_active_filter = False
+            train_types = filter_config.get('train_types', [])
+            if train_types and len(train_types) < len(['GC', 'D', 'Z', 'T', 'K', '其他']):
+                has_active_filter = True
+
+            from_stations = filter_config.get('from_stations', [])
+            if from_stations and len(from_stations) < len(filter_config.get('all_from_stations', [])):
+                has_active_filter = True
+
+            to_stations = filter_config.get('to_stations', [])
+            if to_stations and len(to_stations) < len(filter_config.get('all_to_stations', [])):
+                has_active_filter = True
+
+            seat_types = filter_config.get('seat_types', [])
+            if seat_types and len(seat_types) < len(['business', 'first', 'second', 'soft_sleeper', 'hard_sleeper', 'soft_seat', 'hard_seat', 'no_seat']):
+                has_active_filter = True
+
+            time_period = filter_config.get('time_period', '00:00-24:00')
+            if time_period != '00:00-24:00':
+                has_active_filter = True
+
+            show_fuxing = filter_config.get('show_fuxing', True)
+            if not show_fuxing:
+                has_active_filter = True
+
+            show_smart = filter_config.get('show_smart', True)
+            if not show_smart:
+                has_active_filter = True
+
+            if has_active_filter:
+                self.filter_result_label.setText(f"筛选结果：{filtered_count} / {total_count} 趟")
+            else:
+                self.filter_result_label.setText("未筛选")
+
     def _do_query(self, monitoring: bool = False):
         """执行查询"""
         from_station = self.from_station_input.text().strip()
@@ -610,35 +836,24 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "警告", "请输入出发站和到达站")
             return
 
-        # 保存查询历史（仅非监控模式）
-        if not monitoring:
-            self._save_query_history(from_station, to_station, date)
+        # 查询历史已由 logger/query_history.py 自动记录，此处无需额外保存
 
-        # 解析车次筛选
+        # 解析车次筛选（已移除，预留接口）
         target_trains = None
-        train_filter = self.train_filter_input.text().strip()
-        if train_filter:
-            target_trains = [t.strip().upper() for t in train_filter.split()]
-
-        # 座位筛选
-        seat_filter = self.seat_filter_combo.currentText()
-        if seat_filter == "全部":
-            seat_filter = None
 
         self.status_label.setText(f"正在查询：{from_station} -> {to_station} ({date}) ...")
         self.statusBar().showMessage("查询中...")
         QApplication.processEvents()
 
         try:
-            # 执行查询 - 快速模式不统计详细信息，提高响应速度
-            # 监控模式下进行完整统计
+            # 执行查询
             result = self.query_service.execute_query(
                 date=date,
                 from_station=from_station,
                 to_station=to_station,
                 target_trains=target_trains,
-                filters={'type': seat_filter},
-                quick_mode=not monitoring  # 非监控模式使用快速模式
+                filters=None,  # 不再使用原来的席别筛选
+                quick_mode=not monitoring
             )
 
             if result.get("error"):
@@ -651,21 +866,30 @@ class MainWindow(QMainWindow):
             # 获取收藏列表
             favorites = self.favorite_service.get_favorites()
 
-            # 转换结果为结构化数据
+            # 转换结果为结构化数据（添加车次类型和标识）
             tickets_data = self._convert_tickets_to_data(result.get("all_tickets", []))
+
+            # 获取出发城市和到达城市的所有车站（同城车站列表）
+            from_stations = []
+            to_stations = []
+            if self.station_search:
+                from_stations = self.station_search.get_stations_by_city(from_station)
+                to_stations = self.station_search.get_stations_by_city(to_station)
+
+            # 更新筛选面板的车站列表
+            if hasattr(self, 'filter_panel'):
+                self.filter_panel.update_stations(from_stations=from_stations, to_stations=to_stations)
 
             # 显示结果
             self.result_widget.set_data(tickets_data, favorites)
 
             # 根据模式显示不同信息
             if monitoring:
-                # 监控模式：显示完整统计信息
                 total = result.get("total_count", 0)
                 available = result.get("available_count", 0)
                 self.status_label.setText(f"监控中：{from_station} -> {to_station} ({date}) | 共 {total} 车次 | 有票 {available} 车次")
                 self.statusBar().showMessage(f"监控运行中 - {total}车次 / {available}有票")
             else:
-                # 快速模式：只显示基本查询完成信息
                 total = result.get("total_count", 0)
                 self.status_label.setText(f"查询完成：{from_station} -> {to_station} ({date}) | 共 {total} 车次")
                 self.statusBar().showMessage(f"查询完成 - 共{total}车次")
@@ -676,14 +900,22 @@ class MainWindow(QMainWindow):
 
     def _convert_tickets_to_data(self, tickets) -> List[Dict]:
         """
-        转换 TicketInfo 列表为结构化字典列表
+        转换 TicketInfo 列表为结构化字典列表（添加车次类型和标识）
         :param tickets: TicketInfo 列表
         :return: 字典列表
         """
         result = []
         for ticket in tickets:
+            train_no = ticket.train_no
+            train_type = TrainClassifier.classify_train(train_no)
+            is_fuxing = TrainClassifier.is_fuxing(train_no)
+            is_smart = TrainClassifier.is_smart(train_no)
+
             data = {
-                'train_no': ticket.train_no,
+                'train_no': train_no,
+                'train_type': train_type,
+                'is_fuxing': is_fuxing,
+                'is_smart': is_smart,
                 'from_station': ticket.from_station,
                 'to_station': ticket.to_station,
                 'departure_time': ticket.departure_time,
@@ -733,7 +965,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"监控中：{from_station} -> {to_station} | 间隔 {self.monitor_interval}秒")
         self.statusBar().showMessage(f"监控运行中...")
 
-        self._do_query(monitoring=True)  # 立即查询一次，使用监控模式
+        self._do_query(monitoring=True)
 
     def _stop_monitoring(self):
         """停止监控"""
@@ -766,7 +998,7 @@ class MainWindow(QMainWindow):
         if not train_no_item:
             return
 
-        train_no = train_no_item.text().strip()
+        train_no = train_no_item.text().strip().split()[0]  # 去除"复"、"智"标识
 
         # 切换收藏状态
         is_favorite = self.favorite_service.toggle_favorite(train_no)
@@ -926,61 +1158,6 @@ class MainWindow(QMainWindow):
                 # 如果获取不到车站代码，打开首页
                 webbrowser.open("https://www.12306.cn")
 
-    def _save_query_history(self, from_station, to_station, date):
-        """保存查询历史"""
-        # 避免重复保存相同的查询
-        if self.query_history_stack:
-            last = self.query_history_stack[-1]
-            if last['from'] == from_station and last['to'] == to_station and last['date'] == date:
-                return
-
-        self.query_history_stack.append({
-            'from': from_station,
-            'to': to_station,
-            'date': date,
-            'train_filter': self.train_filter_input.text().strip(),
-            'seat_filter': self.seat_filter_combo.currentText()
-        })
-
-        # 限制历史数量
-        if len(self.query_history_stack) > self.max_history:
-            self.query_history_stack.pop(0)
-
-        # 更新返回按钮状态
-        self.back_button.setVisible(len(self.query_history_stack) > 1)
-
-    def _do_back(self):
-        """回退到上一次查询"""
-        if len(self.query_history_stack) <= 1:
-            self.back_button.setVisible(False)
-            return
-
-        # 弹出当前查询
-        self.query_history_stack.pop()
-
-        # 获取上一次查询条件
-        if self.query_history_stack:
-            last = self.query_history_stack[-1]
-            self.from_station_input.setText(last['from'])
-            self.to_station_input.setText(last['to'])
-
-            # 设置日期
-            date_obj = QDate.fromString(last['date'], "yyyy-MM-dd")
-            if date_obj.isValid():
-                self.date_picker.setDate(date_obj)
-
-            # 设置筛选条件
-            self.train_filter_input.setText(last['train_filter'])
-            index = self.seat_filter_combo.findText(last['seat_filter'])
-            if index >= 0:
-                self.seat_filter_combo.setCurrentIndex(index)
-
-            # 执行查询
-            self._do_query()
-
-        # 更新返回按钮状态
-        self.back_button.setVisible(len(self.query_history_stack) > 1)
-
     def _on_ticket_double_click(self, train_no):
         """处理车次双击"""
         # 双击时自动收藏/取消收藏
@@ -995,7 +1172,7 @@ class MainWindow(QMainWindow):
         """显示关于对话框"""
         QMessageBox.about(
             self, "关于",
-            "12306 车票查询与监控助手 v3.0.0\n\n"
+            "12306 车票查询与监控助手 v3.1.0\n\n"
             "基于 PySide6 的 GUI 版本\n\n"
             "功能特性:\n"
             "- 余票查询\n"
@@ -1005,8 +1182,90 @@ class MainWindow(QMainWindow):
             "- 车站自动补全\n"
             "- 结果高亮显示\n"
             "- 多任务监控\n"
-            "- 手动打开 12306"
+            "- 手动打开 12306\n"
+            "- 高级筛选（车次类型/车站/席别/时段）\n"
+            "- 复兴号/智能动车组标识 \n\n"
+            "开发：BH7GUL"
         )
+
+    def _show_history_dialog(self):
+        """显示历史查询对话框"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QPushButton, QHBoxLayout, QMessageBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("查询历史")
+        dialog.setMinimumSize(600, 500)
+
+        layout = QVBoxLayout(dialog)
+
+        # 历史记录列表
+        history_list = QListWidget()
+        history_list.setSelectionMode(QListWidget.SingleSelection)
+        layout.addWidget(history_list)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+
+        requery_button = QPushButton("重新查询")
+        requery_button.setEnabled(False)
+        button_layout.addWidget(requery_button)
+
+        delete_button = QPushButton("删除选中")
+        delete_button.setEnabled(False)
+        button_layout.addWidget(delete_button)
+
+        close_button = QPushButton("关闭")
+        button_layout.addWidget(close_button)
+
+        layout.addLayout(button_layout)
+
+        # 加载历史记录
+        recent_history = self.query_service.query_history.get_recent(20)
+
+        for record in reversed(recent_history):
+            timestamp = record.get('timestamp', '').split('T')[0]
+            from_station = record.get('from', '')
+            to_station = record.get('to', '')
+            date = record.get('date', '')
+            total_count = record.get('total_count', 0)
+            available_count = record.get('available_count', 0)
+
+            item_text = f"{timestamp} {from_station} → {to_station} ({date}) - 共{total_count}车，有票{available_count}车"
+            history_list.addItem(item_text)
+
+        # 选择事件
+        def on_selection_changed():
+            selected = history_list.currentRow() != -1
+            requery_button.setEnabled(selected)
+            delete_button.setEnabled(selected)
+
+        history_list.currentRowChanged.connect(on_selection_changed)
+
+        # 重新查询
+        def on_requery():
+            selected_row = history_list.currentRow()
+            if selected_row >= 0:
+                # 获取对应的历史记录
+                record = recent_history[-(selected_row + 1)]
+                self.from_station_input.setText(record.get('from', ''))
+                self.to_station_input.setText(record.get('to', ''))
+
+                date_obj = QDate.fromString(record.get('date', ''), "yyyy-MM-dd")
+                if date_obj.isValid():
+                    self.date_picker.setDate(date_obj)
+
+                self._do_query()
+                dialog.accept()
+
+        requery_button.clicked.connect(on_requery)
+
+        # 删除记录（提示暂未实现）
+        delete_button.clicked.connect(lambda: QMessageBox.information(dialog, "提示", "删除功能暂未实现"))
+
+        # 关闭
+        close_button.clicked.connect(dialog.accept)
+
+        dialog.exec()
 
     def closeEvent(self, event):
         """窗口关闭事件"""
