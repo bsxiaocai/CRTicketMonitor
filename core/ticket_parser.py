@@ -37,7 +37,7 @@ class TicketParser:
         :return: 车票列表，如果 return_table=True 则返回 (table_str, tickets)
         """
         table = PrettyTable()
-        table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商/特", "一等座", "二等座",
+        table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商务座/特等座", "一等座", "二等座",
                             "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"]
 
         available_tickets = []

@@ -42,7 +42,7 @@ class QueryResultWidget(QWidget):
         self.table.setColumnCount(14)
         self.table.setHorizontalHeaderLabels([
             "车次", "始发站", "到达站", "开点", "到点", "历时",
-            "商/特", "一等座", "二等座", "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"
+            "商务座/特等座", "一等座", "二等座", "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"
         ])
 
         # 设置列宽
@@ -995,7 +995,7 @@ class MainWindow(QMainWindow):
         """显示关于对话框"""
         QMessageBox.about(
             self, "关于",
-            "12306 余票监控工具 v3.0.0\n\n"
+            "12306 车票查询与监控助手 v3.0.0\n\n"
             "基于 PySide6 的 GUI 版本\n\n"
             "功能特性:\n"
             "- 余票查询\n"
