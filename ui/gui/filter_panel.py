@@ -187,8 +187,9 @@ class FilterPanel(QWidget):
         elif search_text:
             stations = sorted(self.station_dict.keys())
             if search_text:
-                stations = [s for s in stations if search_text.lower() in s.lower() or
-                           any(pinyin.startswith(search_text.lower()) for pinyin in self._get_pinyin_initials(s))]
+                kw = search_text.lower()
+                stations = [s for s in stations if kw in s.lower() or
+                           any(kw in pinyin for pinyin in self._get_pinyin_initials(s))]
         else:
             # 没有查询结果且无搜索文本，不显示任何车站
             return
@@ -202,9 +203,14 @@ class FilterPanel(QWidget):
             layout.addWidget(cb, i // 5, i % 5)
 
     def _get_pinyin_initials(self, station: str) -> list:
-        """获取车站拼音首字母（简化版）"""
-        # 这里可以集成 pypinyin 库，暂时返回空列表
-        return []
+        """获取车站拼音首字母和全拼"""
+        try:
+            from pypinyin import lazy_pinyin, Style
+            initials = ''.join(lazy_pinyin(station, style=Style.FIRST_LETTER)).lower()
+            full = ''.join(lazy_pinyin(station)).lower()
+            return [initials, full]
+        except Exception:
+            return []
 
     def _create_seat_type_group(self, parent_layout):
         """创建席别筛选组"""

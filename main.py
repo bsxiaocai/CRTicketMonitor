@@ -85,6 +85,7 @@ def main():
     # 初始化通知系统
     notification_manager = None
     from notification import NotificationManager, NativeWindowsNotification
+    from notification.channels import WeChatWorkNotification, FeishuNotification, DingTalkNotification
     try:
         notif_config = config_manager.get_config().get("notification", {})
         if notif_config.get("enabled", True):
@@ -98,8 +99,34 @@ def main():
                 'target_trains': None
             }
             notification_manager = NotificationManager(notif_config_filtered)
-            notification_manager.register_channel(NativeWindowsNotification())
-            logger.info("通知渠道已启用：Windows 原生通知")
+
+            # 根据配置注册通知渠道
+            channels_cfg = notif_config.get("channels", {})
+
+            # Windows 原生通知
+            if channels_cfg.get("windows_desktop", {}).get("enabled", True):
+                notification_manager.register_channel(NativeWindowsNotification())
+                logger.info("通知渠道已启用：Windows 原生通知")
+
+            # 企业微信
+            wx_cfg = channels_cfg.get("wechat_work", {})
+            if wx_cfg.get("enabled") and wx_cfg.get("webhook_url"):
+                notification_manager.register_channel(WeChatWorkNotification(wx_cfg["webhook_url"]))
+                logger.info("通知渠道已启用：企业微信")
+
+            # 飞书
+            fs_cfg = channels_cfg.get("feishu", {})
+            if fs_cfg.get("enabled") and fs_cfg.get("webhook_url"):
+                notification_manager.register_channel(FeishuNotification(fs_cfg["webhook_url"]))
+                logger.info("通知渠道已启用：飞书")
+
+            # 钉钉
+            dd_cfg = channels_cfg.get("dingtalk", {})
+            if dd_cfg.get("enabled") and dd_cfg.get("webhook_url"):
+                notification_manager.register_channel(
+                    DingTalkNotification(dd_cfg["webhook_url"], dd_cfg.get("secret"))
+                )
+                logger.info("通知渠道已启用：钉钉")
     except Exception as e:
         logger.error(f"通知系统初始化失败：{e}", exc_info=True)
 

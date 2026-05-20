@@ -4,9 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -20,10 +18,9 @@ wheels/
 .installed.cfg
 *.egg
 
-# PyInstaller
-*.spec
-*.spec~
-*.exe
+# PyInstaller 构建产物
+build/
+dist/
 
 # 日志文件
 logs/
@@ -43,16 +40,13 @@ Thumbs.db
 desktop.ini
 
 # 测试相关
-test_all.py
-test/test_all.py
-test_new_features.py
 .pytest_cache/
 .coverage
 htmlcov/
 
 # 运行时生成
-station_codes.json
 query_history.jsonl
+favorites.json
 *.db
 *.sqlite
 
@@ -60,10 +54,5 @@ query_history.jsonl
 *.tmp
 *.bak
 *.backup
-main.py.bak
 
-# 文档文件（功能说明文档已融入README.md）
-FUNCTION_UPDATE.md
-IMPLEMENTATION_SUMMARY.md
-RELEASE_v2.0.md
-nul
+.claude

@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QDateEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox, QFileDialog, QGroupBox, QSpinBox, QComboBox,
+    QHeaderView, QMessageBox, QFileDialog, QGroupBox, QCheckBox, QSpinBox, QComboBox,
     QTextEdit, QFrame, QTabWidget, QMenuBar, QMenu, QApplication, QListWidget,
     QDialog, QSplitter, QScrollArea
 )
@@ -398,6 +398,7 @@ class MainWindow(QMainWindow):
         self.monitor_timer = None
         self.current_monitor_task_id = None
         self.monitor_interval = 30  # 秒
+        self._has_queried = False  # 是否已执行过查询
 
         self.init_ui()
 
@@ -476,6 +477,9 @@ class MainWindow(QMainWindow):
         interval_action = QAction("监控间隔", self)
         interval_action.triggered.connect(self._set_monitor_interval)
         settings_menu.addAction(interval_action)
+        notif_action = QAction("通知设置", self)
+        notif_action.triggered.connect(self._show_notification_settings)
+        settings_menu.addAction(notif_action)
 
         # 帮助菜单
         help_menu = menubar.addMenu("帮助")
@@ -777,6 +781,13 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'filter_panel'):
             self.filter_panel.reset_filters()
 
+        # 清空结果表格
+        self.result_widget.set_data([], [])
+        self._has_queried = False
+
+        # 重置筛选统计
+        self.filter_result_label.setText("未筛选")
+
         # 重置状态
         self.status_label.setText("等待查询...")
         self.statusBar().showMessage("已重置查询条件")
@@ -882,6 +893,10 @@ class MainWindow(QMainWindow):
 
             # 显示结果
             self.result_widget.set_data(tickets_data, favorites)
+            self._has_queried = True
+
+            # 同步更新筛选统计
+            self._on_filter_changed()
 
             # 根据模式显示不同信息
             if monitoring:
@@ -1131,6 +1146,137 @@ class MainWindow(QMainWindow):
             if self.current_monitor_task_id:
                 self.monitor_manager.update_task_interval(self.current_monitor_task_id, self.monitor_interval)
 
+    def _show_notification_settings(self):
+        """显示通知设置对话框"""
+        config = self.config_manager.get_config()
+        notif_config = config.setdefault("notification", {})
+        channels = notif_config.setdefault("channels", {})
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("通知设置")
+        dialog.setMinimumSize(500, 400)
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+
+        # 全局开关
+        global_enabled_cb = QCheckBox("启用通知")
+        global_enabled_cb.setChecked(notif_config.get("enabled", True))
+        layout.addWidget(global_enabled_cb)
+
+        # 冷却时间
+        cooldown_layout = QHBoxLayout()
+        cooldown_layout.addWidget(QLabel("通知冷却时间（秒）:"))
+        cooldown_spin = QSpinBox()
+        cooldown_spin.setMinimum(10)
+        cooldown_spin.setMaximum(3600)
+        cooldown_spin.setValue(notif_config.get("cooldown_seconds", 300))
+        cooldown_layout.addWidget(cooldown_spin)
+        layout.addLayout(cooldown_layout)
+
+        # 分隔线
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(line)
+
+        # --- Windows 原生通知 ---
+        win_group = QGroupBox("Windows 原生通知")
+        win_layout = QVBoxLayout(win_group)
+        win_enabled_cb = QCheckBox("启用（使用系统 Toast 通知，无需额外配置）")
+        win_enabled_cb.setChecked(channels.get("windows_desktop", {}).get("enabled", True))
+        win_layout.addWidget(win_enabled_cb)
+        layout.addWidget(win_group)
+
+        # --- 企业微信 ---
+        wx_group = QGroupBox("企业微信机器人")
+        wx_layout = QVBoxLayout(wx_group)
+        wx_enabled_cb = QCheckBox("启用")
+        wx_enabled_cb.setChecked(channels.get("wechat_work", {}).get("enabled", False))
+        wx_layout.addWidget(wx_enabled_cb)
+        wx_url_layout = QHBoxLayout()
+        wx_url_layout.addWidget(QLabel("Webhook URL:"))
+        wx_url_input = QLineEdit()
+        wx_url_input.setPlaceholderText("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...")
+        wx_url_input.setText(channels.get("wechat_work", {}).get("webhook_url", ""))
+        wx_url_layout.addWidget(wx_url_input)
+        wx_layout.addLayout(wx_url_layout)
+        layout.addWidget(wx_group)
+
+        # --- 飞书 ---
+        feishu_group = QGroupBox("飞书机器人")
+        feishu_layout = QVBoxLayout(feishu_group)
+        feishu_enabled_cb = QCheckBox("启用")
+        feishu_enabled_cb.setChecked(channels.get("feishu", {}).get("enabled", False))
+        feishu_layout.addWidget(feishu_enabled_cb)
+        feishu_url_layout = QHBoxLayout()
+        feishu_url_layout.addWidget(QLabel("Webhook URL:"))
+        feishu_url_input = QLineEdit()
+        feishu_url_input.setPlaceholderText("https://open.feishu.cn/open-apis/bot/v2/hook/...")
+        feishu_url_input.setText(channels.get("feishu", {}).get("webhook_url", ""))
+        feishu_url_layout.addWidget(feishu_url_input)
+        feishu_layout.addLayout(feishu_url_layout)
+        layout.addWidget(feishu_group)
+
+        # --- 钉钉 ---
+        ding_group = QGroupBox("钉钉机器人")
+        ding_layout = QVBoxLayout(ding_group)
+        ding_enabled_cb = QCheckBox("启用")
+        ding_enabled_cb.setChecked(channels.get("dingtalk", {}).get("enabled", False))
+        ding_layout.addWidget(ding_enabled_cb)
+        ding_url_layout = QHBoxLayout()
+        ding_url_layout.addWidget(QLabel("Webhook URL:"))
+        ding_url_input = QLineEdit()
+        ding_url_input.setPlaceholderText("https://oapi.dingtalk.com/robot/send?access_token=...")
+        ding_url_input.setText(channels.get("dingtalk", {}).get("webhook_url", ""))
+        ding_url_layout.addWidget(ding_url_input)
+        ding_layout.addLayout(ding_url_layout)
+        ding_secret_layout = QHBoxLayout()
+        ding_secret_layout.addWidget(QLabel("签名密钥:"))
+        ding_secret_input = QLineEdit()
+        ding_secret_input.setPlaceholderText("SEC...（可选，用于加签）")
+        ding_secret_input.setText(channels.get("dingtalk", {}).get("secret", ""))
+        ding_secret_layout.addWidget(ding_secret_input)
+        ding_layout.addLayout(ding_secret_layout)
+        layout.addWidget(ding_group)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        save_button = QPushButton("保存")
+        cancel_button = QPushButton("取消")
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+        def on_save():
+            notif_config["enabled"] = global_enabled_cb.isChecked()
+            notif_config["cooldown_seconds"] = cooldown_spin.value()
+
+            channels["windows_desktop"] = {"enabled": win_enabled_cb.isChecked()}
+            channels["wechat_work"] = {
+                "enabled": wx_enabled_cb.isChecked(),
+                "webhook_url": wx_url_input.text().strip()
+            }
+            channels["feishu"] = {
+                "enabled": feishu_enabled_cb.isChecked(),
+                "webhook_url": feishu_url_input.text().strip()
+            }
+            channels["dingtalk"] = {
+                "enabled": ding_enabled_cb.isChecked(),
+                "webhook_url": ding_url_input.text().strip(),
+                "secret": ding_secret_input.text().strip()
+            }
+
+            self.config_manager.save_config()
+            self.statusBar().showMessage("通知设置已保存")
+            dialog.accept()
+
+        save_button.clicked.connect(on_save)
+        cancel_button.clicked.connect(dialog.reject)
+
+        dialog.exec()
+
     def _open_12306(self):
         """打开 12306 网页"""
         import webbrowser
@@ -1139,15 +1285,11 @@ class MainWindow(QMainWindow):
         to_station = self.to_station_input.text().strip()
         date = self.date_picker.date().toString("yyyy-MM-dd")
 
-        # 检查是否有查询车次
-        current_rows = self.result_widget.table.rowCount()
-
-        if current_rows == 0 or not from_station or not to_station:
-            # 没有查询车次时，打开 12306 首页
+        if not self._has_queried or not from_station or not to_station:
+            # 未执行查询时，打开 12306 首页
             webbrowser.open("https://www.12306.cn")
         else:
-            # 有查询车次时，打开对应路线的查询界面
-            # 需要先获取车站代码
+            # 已执行查询时，打开对应路线的查询界面
             from_code = self.query_service.ticket_api.get_station_code(from_station)
             to_code = self.query_service.ticket_api.get_station_code(to_station)
 
@@ -1155,7 +1297,6 @@ class MainWindow(QMainWindow):
                 url = f"https://kyfw.12306.cn/otn/leftTicket/init?leftTicketDTO.train_date={date}&leftTicketDTO.from_station={from_code}&leftTicketDTO.to_station={to_code}&purpose_codes=ADULT"
                 webbrowser.open(url)
             else:
-                # 如果获取不到车站代码，打开首页
                 webbrowser.open("https://www.12306.cn")
 
     def _on_ticket_double_click(self, train_no):
@@ -1198,9 +1339,9 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout(dialog)
 
-        # 历史记录列表
+        # 历史记录列表（支持多选）
         history_list = QListWidget()
-        history_list.setSelectionMode(QListWidget.SingleSelection)
+        history_list.setSelectionMode(QListWidget.ExtendedSelection)
         layout.addWidget(history_list)
 
         # 按钮区域
@@ -1214,24 +1355,34 @@ class MainWindow(QMainWindow):
         delete_button.setEnabled(False)
         button_layout.addWidget(delete_button)
 
+        clear_button = QPushButton("清空全部")
+        button_layout.addWidget(clear_button)
+
         close_button = QPushButton("关闭")
         button_layout.addWidget(close_button)
 
         layout.addLayout(button_layout)
 
         # 加载历史记录
-        recent_history = self.query_service.query_history.get_recent(20)
+        recent_history = self.query_service.query_history.get_recent(50)
 
-        for record in reversed(recent_history):
-            timestamp = record.get('timestamp', '').split('T')[0]
-            from_station = record.get('from', '')
-            to_station = record.get('to', '')
-            date = record.get('date', '')
-            total_count = record.get('total_count', 0)
-            available_count = record.get('available_count', 0)
+        def refresh_list():
+            """刷新列表显示"""
+            nonlocal recent_history
+            recent_history = self.query_service.query_history.get_recent(50)
+            history_list.clear()
+            for record in reversed(recent_history):
+                timestamp = record.get('timestamp', '').split('T')[0]
+                from_station = record.get('from', '')
+                to_station = record.get('to', '')
+                date = record.get('date', '')
+                total_count = record.get('total_count', 0)
+                available_count = record.get('available_count', 0)
 
-            item_text = f"{timestamp} {from_station} → {to_station} ({date}) - 共{total_count}车，有票{available_count}车"
-            history_list.addItem(item_text)
+                item_text = f"{timestamp} {from_station} → {to_station} ({date}) - 共{total_count}车，有票{available_count}车"
+                history_list.addItem(item_text)
+
+        refresh_list()
 
         # 选择事件
         def on_selection_changed():
@@ -1245,7 +1396,6 @@ class MainWindow(QMainWindow):
         def on_requery():
             selected_row = history_list.currentRow()
             if selected_row >= 0:
-                # 获取对应的历史记录
                 record = recent_history[-(selected_row + 1)]
                 self.from_station_input.setText(record.get('from', ''))
                 self.to_station_input.setText(record.get('to', ''))
@@ -1259,8 +1409,47 @@ class MainWindow(QMainWindow):
 
         requery_button.clicked.connect(on_requery)
 
-        # 删除记录（提示暂未实现）
-        delete_button.clicked.connect(lambda: QMessageBox.information(dialog, "提示", "删除功能暂未实现"))
+        # 删除选中记录
+        def on_delete():
+            selected_rows = sorted(set(item.row() for item in history_list.selectedItems()), reverse=True)
+            if not selected_rows:
+                return
+
+            reply = QMessageBox.question(
+                dialog, "确认删除",
+                f"确定要删除选中的 {len(selected_rows)} 条记录吗？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+            # 将列表行号转为 history 索引（列表是倒序显示的）
+            indices = [history_list.count() - 1 - row for row in selected_rows]
+            self.query_service.query_history.delete_by_index(indices)
+
+            refresh_list()
+            self.statusBar().showMessage(f"已删除 {len(indices)} 条历史记录")
+
+        delete_button.clicked.connect(on_delete)
+
+        # 清空全部记录
+        def on_clear():
+            if history_list.count() == 0:
+                return
+
+            reply = QMessageBox.question(
+                dialog, "确认清空",
+                "确定要清空全部查询历史吗？此操作不可恢复。",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+            self.query_service.query_history.delete_by_index(list(range(history_list.count())))
+            refresh_list()
+            self.statusBar().showMessage("已清空全部历史记录")
+
+        clear_button.clicked.connect(on_clear)
 
         # 关闭
         close_button.clicked.connect(dialog.accept)

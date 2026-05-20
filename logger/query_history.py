@@ -62,6 +62,37 @@ class QueryHistory:
 
         return records[-limit:]
 
+    def delete_by_index(self, indices: List[int]) -> bool:
+        """
+        按索引删除记录（索引对应 get_recent 返回的顺序）
+        :param indices: 要删除的记录索引列表（从 get_recent 返回的列表中，0=最新）
+        :return: 是否删除成功
+        """
+        records = self.get_recent(0)  # 获取全部记录
+        if not records:
+            return False
+
+        # get_recent(0) 返回全部，最新在末尾
+        # indices 是倒序排列中的索引（0=最新），需要转为正序索引
+        total = len(records)
+        to_delete = set()
+        for idx in indices:
+            # idx=0 表示最新记录，即正序的 total-1
+            real_idx = total - 1 - idx
+            if 0 <= real_idx < total:
+                to_delete.add(real_idx)
+
+        # 保留未删除的记录
+        remaining = [r for i, r in enumerate(records) if i not in to_delete]
+
+        try:
+            with open(self.history_file, "w", encoding="utf-8") as f:
+                for record in remaining:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            return True
+        except Exception:
+            return False
+
     def get_statistics(self) -> Dict:
         """
         获取查询统计信息
