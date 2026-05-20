@@ -1,6 +1,6 @@
 """
 12306 余票监控工具 - 主程序
-版本：3.1.0
+版本：3.2.0
 设计：BH7GUL
 """
 
@@ -58,7 +58,7 @@ def main():
     # 初始化日志系统
     from logger import TicketLogger, QueryHistory
     logger = TicketLogger(log_dir, {})
-    logger.log_startup("3.0.0")
+    logger.log_startup("3.2.0")
 
     # 初始化查询历史
     query_history = QueryHistory(log_dir)
@@ -238,7 +238,7 @@ def start_gui(query_service, config_manager, favorite_service, cache_service,
 
     app = QApplication(sys.argv)
     app.setApplicationName("12306 余票监控工具")
-    app.setApplicationVersion("3.0.0")
+    app.setApplicationVersion("3.2.0")
 
     # 设置应用样式
     app.setStyle("Fusion")

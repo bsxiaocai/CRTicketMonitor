@@ -403,7 +403,7 @@ class MainWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("12306 车票查询与监控助手 v3.1.0")
+        self.setWindowTitle("12306 车票查询与监控助手 v3.2.0")
 
         # 窗口大小自适应屏幕（使用屏幕的 85%）
         screen = QApplication.primaryScreen().availableGeometry()
@@ -1313,7 +1313,7 @@ class MainWindow(QMainWindow):
         """显示关于对话框"""
         QMessageBox.about(
             self, "关于",
-            "12306 车票查询与监控助手 v3.1.0\n\n"
+            "12306 车票查询与监控助手 v3.2.0\n\n"
             "基于 PySide6 的 GUI 版本\n\n"
             "功能特性:\n"
             "- 余票查询\n"
