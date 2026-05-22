@@ -19,12 +19,36 @@ class TicketInfo:
     arrival_time: str      # 到达时间
     duration: str          # 历时
     available_seats: Dict[str, str]  # {坐席类型: 余票数量}
+    internal_train_no: str = ""      # 内部车次号（d[2]，票价API必需）
+    from_station_no: str = ""        # 出发站序号（d[16]）
+    to_station_no: str = ""          # 到达站序号（d[17]）
+    seat_types_code: str = ""        # 席别代码串（d[35]）
+    prices: Optional[Dict[str, str]] = None  # {席别显示名: 价格字符串}
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False)
+
+
+@dataclass
+class TransferTicketInfo:
+    """中转换乘车票信息"""
+    first_leg: TicketInfo        # 第一程
+    second_leg: TicketInfo       # 第二程
+    transfer_station: str        # 中转站名称
+    total_duration: str          # 总历时
+    wait_time: str               # 中转等待时间
+
+    def to_dict(self) -> dict:
+        return {
+            'first_leg': self.first_leg.to_dict(),
+            'second_leg': self.second_leg.to_dict(),
+            'transfer_station': self.transfer_station,
+            'total_duration': self.total_duration,
+            'wait_time': self.wait_time,
+        }
 
 
 @dataclass

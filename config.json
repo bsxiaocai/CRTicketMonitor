@@ -38,7 +38,8 @@
         "max_size_mb": 10,
         "backup_count": 5,
         "console_output": false,
-        "log_query_history": true
+        "log_query_history": true,
+        "debug_api": false
     },
     "auto_open_12306": false,
     "gui": {

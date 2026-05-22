@@ -15,18 +15,64 @@ from PySide6.QtWidgets import (
     QTextEdit, QFrame, QTabWidget, QMenuBar, QMenu, QApplication, QListWidget,
     QDialog, QSplitter, QScrollArea
 )
-from PySide6.QtCore import Qt, QTimer, QDate, Signal
+from PySide6.QtCore import Qt, QTimer, QDate, Signal, QEvent
 from PySide6.QtGui import QColor, QFont, QAction
 
 from ui.gui.filter_panel import FilterPanel
 from core.train_classifier import TrainClassifier
 
 
+class PriceDetailDialog(QDialog):
+    """票价详情弹窗"""
+
+    def __init__(self, train_no, from_station, to_station, prices, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"车次 {train_no} 票价详情")
+        self.setFixedSize(350, 300)
+
+        layout = QVBoxLayout(self)
+
+        # 路线信息
+        route_label = QLabel(f"{from_station} → {to_station}")
+        route_label.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 8px;")
+        layout.addWidget(route_label)
+
+        # 票价表格
+        price_table = QTableWidget()
+        price_table.setColumnCount(2)
+        price_table.setHorizontalHeaderLabels(["席别", "票价（元）"])
+        header = price_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        price_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        price_table.setSelectionBehavior(QTableWidget.SelectRows)
+
+        if prices:
+            for seat_name, price_val in prices.items():
+                if price_val:
+                    row = price_table.rowCount()
+                    price_table.insertRow(row)
+                    price_table.setItem(row, 0, QTableWidgetItem(seat_name))
+                    price_table.setItem(row, 1, QTableWidgetItem(f"¥{price_val}"))
+        else:
+            price_table.setRowCount(1)
+            price_table.setSpan(0, 0, 1, 2)
+            price_table.setItem(0, 0, QTableWidgetItem("暂无票价数据"))
+
+        layout.addWidget(price_table)
+
+        # 关闭按钮
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+
 class QueryResultWidget(QWidget):
     """查询结果表格组件"""
 
-    ticket_double_clicked = Signal(str)  # 车次号（双击时触发）
-    unfavorite_requested = Signal(str)  # 取消收藏请求（右键菜单触发）
+    price_detail_requested = Signal(dict)  # 左键双击：请求显示票价详情
+    favorite_requested = Signal(str)        # 右键双击：请求收藏/取消收藏
+    unfavorite_requested = Signal(str)      # 取消收藏请求（右键菜单触发）
 
     def __init__(self):
         super().__init__()
@@ -50,10 +96,33 @@ class QueryResultWidget(QWidget):
             "商务座/特等座", "一等座", "二等座", "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"
         ])
 
-        # 设置列宽 - 均匀分布
+        # 设置列宽 - Interactive 模式支持横向滚动
         header = self.table.horizontalHeader()
-        for i in range(self.table.columnCount()):
-            header.setSectionResizeMode(i, QHeaderView.Stretch)
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setMinimumSectionSize(50)
+
+        # 为每列设置合理的默认宽度
+        default_widths = {
+            0: 80,    # 车次
+            1: 70,    # 出发站
+            2: 70,    # 到达站
+            3: 55,    # 开点
+            4: 60,    # 到点（跨天时显示"次日 HH:MM"，需要更宽）
+            5: 55,    # 历时
+            6: 90,    # 商务座/特等座
+            7: 70,    # 一等座
+            8: 70,    # 二等座
+            9: 100,   # 软卧/动卧/一等卧
+            10: 90,   # 硬卧/二等卧
+            11: 55,   # 软座
+            12: 70,   # 硬座
+            13: 65,   # 无座
+        }
+        for col, width in default_widths.items():
+            self.table.setColumnWidth(col, width)
+
+        # 启用横向滚动条
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         # 启用表头点击排序
         header.setSectionsClickable(True)
@@ -66,6 +135,9 @@ class QueryResultWidget(QWidget):
         self.table.doubleClicked.connect(self._on_double_click)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
+
+        # 安装事件过滤器以捕获右键双击
+        self.table.viewport().installEventFilter(self)
 
         layout.addWidget(self.table)
 
@@ -132,9 +204,13 @@ class QueryResultWidget(QWidget):
             if column == 3:  # 开点
                 time_val = self._time_to_minutes(item.get('departure_time', '99:99'))
                 return (fav_priority, time_val)
-            elif column == 4:  # 到点
-                time_val = self._time_to_minutes(item.get('arrival_time', '99:99'))
-                return (fav_priority, time_val)
+            elif column == 4:  # 到点（需处理跨天）
+                arrival_val = self._time_to_minutes(item.get('arrival_time', '99:99'))
+                depart_val = self._time_to_minutes(item.get('departure_time', '99:99'))
+                duration_val = self._duration_to_minutes(item.get('duration', '99:99'))
+                if arrival_val < depart_val and duration_val > 0:
+                    arrival_val += 24 * 60
+                return (fav_priority, arrival_val)
             elif column == 5:  # 历时
                 duration_val = self._duration_to_minutes(item.get('duration', '99:99'))
                 return (fav_priority, duration_val)
@@ -281,8 +357,13 @@ class QueryResultWidget(QWidget):
             self.table.setItem(row_position, 1, QTableWidgetItem(ticket.get('from_station', '--')))
             self.table.setItem(row_position, 2, QTableWidgetItem(ticket.get('to_station', '--')))
             self.table.setItem(row_position, 3, QTableWidgetItem(ticket.get('departure_time', '--')))
-            self.table.setItem(row_position, 4, QTableWidgetItem(ticket.get('arrival_time', '--')))
+            # 跨天车次到达时间显示"次日"前缀
+            arrival_display = ticket.get('arrival_time', '--')
+            if ticket.get('is_cross_day', False) and arrival_display != '--':
+                arrival_display = f"次日 {arrival_display}"
+            self.table.setItem(row_position, 4, QTableWidgetItem(arrival_display))
             self.table.setItem(row_position, 5, QTableWidgetItem(ticket.get('duration', '--')))
+            # 席别列：直接显示余票信息（价格通过左键双击弹窗查看）
             self.table.setItem(row_position, 6, QTableWidgetItem(ticket.get('business_seat', '--')))
             self.table.setItem(row_position, 7, QTableWidgetItem(ticket.get('first_seat', '--')))
             self.table.setItem(row_position, 8, QTableWidgetItem(ticket.get('second_seat', '--')))
@@ -326,16 +407,24 @@ class QueryResultWidget(QWidget):
         menu.exec_(self.table.viewport().mapToGlobal(pos))
 
     def _on_double_click(self, index):
-        """处理双击事件"""
+        """处理左键双击事件 — 显示票价详情"""
         row = index.row()
-        train_no_item = self.table.item(row, 0)
-        if train_no_item:
-            # 获取车次号（去除"复"、"智"标识和空格）
-            train_no_raw = train_no_item.text().strip()
-            train_no = train_no_raw.split()[0]
-            # 去除颜色标记
-            train_no = train_no.replace('\033[92m', '').replace('\033[93m', '').replace('\033[90m', '').replace('\033[0m', '')
-            self.ticket_double_clicked.emit(train_no)
+        data_to_use = self.filtered_data if self.filtered_data else self.current_data
+        if 0 <= row < len(data_to_use):
+            self.price_detail_requested.emit(data_to_use[row])
+
+    def eventFilter(self, obj, event):
+        """事件过滤器 — 捕获右键双击实现收藏"""
+        if obj == self.table.viewport() and event.type() == QEvent.MouseButtonDblClick and event.button() == Qt.RightButton:
+            row = self.table.rowAt(event.position().toPoint().y())
+            if row >= 0:
+                train_no_item = self.table.item(row, 0)
+                if train_no_item:
+                    train_no_raw = train_no_item.text().strip()
+                    train_no = train_no_raw.split()[0]
+                    self.favorite_requested.emit(train_no)
+                    return True
+        return super().eventFilter(obj, event)
 
     def set_data(self, tickets: List[Dict], favorites: List[str] = None):
         """
@@ -399,6 +488,7 @@ class MainWindow(QMainWindow):
         self.current_monitor_task_id = None
         self.monitor_interval = 30  # 秒
         self._has_queried = False  # 是否已执行过查询
+        self._transfer_loaded = False  # 中转查询是否已加载
 
         self.init_ui()
 
@@ -619,13 +709,109 @@ class MainWindow(QMainWindow):
         status_layout.addStretch()
         layout.addWidget(status_widget)
 
-        # 结果表格
-        self.result_widget = QueryResultWidget()
-        self.result_widget.ticket_double_clicked.connect(self._on_ticket_double_click)
-        self.result_widget.unfavorite_requested.connect(self._on_unfavorite_request)
-        layout.addWidget(self.result_widget)
+        # 标签页：直达车次 / 中转换乘
+        self.result_tabs = QTabWidget()
 
+        # Tab 1: 直达车次
+        self.result_widget = QueryResultWidget()
+        self.result_widget.price_detail_requested.connect(self._on_price_detail_requested)
+        self.result_widget.favorite_requested.connect(self._on_right_double_click_favorite)
+        self.result_widget.unfavorite_requested.connect(self._on_unfavorite_request)
+        self.result_tabs.addTab(self.result_widget, "直达车次")
+
+        # Tab 2: 中转换乘
+        self.transfer_widget = self._create_transfer_widget()
+        self.result_tabs.addTab(self.transfer_widget, "中转换乘")
+
+        # 标签切换时懒加载中转数据
+        self.result_tabs.currentChanged.connect(self._on_tab_changed)
+
+        layout.addWidget(self.result_tabs)
         return group
+
+    def _create_transfer_widget(self) -> QWidget:
+        """创建中转换乘显示组件"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # 提示标签
+        self.transfer_hint = QLabel("点击此标签页将自动查询中转换乘方案")
+        self.transfer_hint.setStyleSheet("color: #888888; font-size: 12px; padding: 5px;")
+        layout.addWidget(self.transfer_hint)
+
+        # 中转结果表格
+        self.transfer_table = QTableWidget()
+        self.transfer_table.setColumnCount(10)
+        self.transfer_table.setHorizontalHeaderLabels([
+            "第一程车次", "第一程出发", "第一程到达", "第一程时间",
+            "中转站", "等待时间",
+            "第二程车次", "第二程出发", "第二程到达", "第二程时间"
+        ])
+        header = self.transfer_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setMinimumSectionSize(60)
+        default_widths = {0: 80, 1: 70, 2: 70, 3: 120, 4: 70, 5: 80, 6: 80, 7: 70, 8: 70, 9: 120}
+        for col, width in default_widths.items():
+            self.transfer_table.setColumnWidth(col, width)
+        self.transfer_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.transfer_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.transfer_table.setAlternatingRowColors(True)
+        self.transfer_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        layout.addWidget(self.transfer_table)
+        return widget
+
+    def _on_tab_changed(self, index):
+        """标签页切换回调"""
+        # index 1 = 中转换乘标签
+        if index == 1 and not self._transfer_loaded and self._has_queried:
+            self._load_transfer_results()
+
+    def _load_transfer_results(self):
+        """加载中转换乘结果"""
+        from_station = self.from_station_input.text().strip()
+        to_station = self.to_station_input.text().strip()
+        date = self.date_picker.date().toString("yyyy-MM-dd")
+
+        if not from_station or not to_station:
+            return
+
+        self.transfer_hint.setText("正在查询中转方案，请稍候...")
+        self.statusBar().showMessage("正在查询中转方案...")
+        QApplication.processEvents()
+
+        try:
+            result = self.query_service.execute_transfer_query(date, from_station, to_station)
+            transfers = result.get("transfers", [])
+            self._update_transfer_display(transfers)
+            self._transfer_loaded = True
+            self.transfer_hint.setText(f"共找到 {len(transfers)} 个中转方案")
+            self.statusBar().showMessage(f"中转查询完成 - 共 {len(transfers)} 个方案")
+        except Exception as e:
+            self.transfer_hint.setText(f"中转查询失败：{e}")
+            self.statusBar().showMessage("中转查询失败")
+            if self.logger:
+                self.logger.error(f"中转查询失败：{e}", exc_info=True)
+
+    def _update_transfer_display(self, transfers: list):
+        """更新中转表格显示"""
+        self.transfer_table.setRowCount(0)
+        for t in transfers:
+            row = self.transfer_table.rowCount()
+            self.transfer_table.insertRow(row)
+            self.transfer_table.setItem(row, 0, QTableWidgetItem(t.first_leg.train_no))
+            self.transfer_table.setItem(row, 1, QTableWidgetItem(t.first_leg.from_station))
+            self.transfer_table.setItem(row, 2, QTableWidgetItem(t.first_leg.to_station))
+            self.transfer_table.setItem(row, 3, QTableWidgetItem(
+                f"{t.first_leg.departure_time} - {t.first_leg.arrival_time} ({t.first_leg.duration})"))
+            self.transfer_table.setItem(row, 4, QTableWidgetItem(t.transfer_station))
+            self.transfer_table.setItem(row, 5, QTableWidgetItem(t.wait_time or "--"))
+            self.transfer_table.setItem(row, 6, QTableWidgetItem(t.second_leg.train_no))
+            self.transfer_table.setItem(row, 7, QTableWidgetItem(t.second_leg.from_station))
+            self.transfer_table.setItem(row, 8, QTableWidgetItem(t.second_leg.to_station))
+            self.transfer_table.setItem(row, 9, QTableWidgetItem(
+                f"{t.second_leg.departure_time} - {t.second_leg.arrival_time} ({t.second_leg.duration})"))
 
     def _on_from_station_changed(self, text):
         """出发站输入变化"""
@@ -784,6 +970,9 @@ class MainWindow(QMainWindow):
         # 清空结果表格
         self.result_widget.set_data([], [])
         self._has_queried = False
+        self._transfer_loaded = False
+        self.transfer_table.setRowCount(0)
+        self.transfer_hint.setText("点击此标签页将自动查询中转换乘方案")
 
         # 重置筛选统计
         self.filter_result_label.setText("未筛选")
@@ -846,6 +1035,9 @@ class MainWindow(QMainWindow):
         if not from_station or not to_station:
             QMessageBox.warning(self, "警告", "请输入出发站和到达站")
             return
+
+        # 重置中转查询状态
+        self._transfer_loaded = False
 
         # 查询历史已由 logger/query_history.py 自动记录，此处无需额外保存
 
@@ -926,6 +1118,20 @@ class MainWindow(QMainWindow):
             is_fuxing = TrainClassifier.is_fuxing(train_no)
             is_smart = TrainClassifier.is_smart(train_no)
 
+            # 跨天检测
+            is_cross_day = False
+            try:
+                dep_h, dep_m = map(int, ticket.departure_time.split(':'))
+                arr_h, arr_m = map(int, ticket.arrival_time.split(':'))
+                dur_parts = ticket.duration.split(':')
+                dur_minutes = int(dur_parts[0]) * 60 + int(dur_parts[1])
+                dep_minutes = dep_h * 60 + dep_m
+                arr_minutes = arr_h * 60 + arr_m
+                if arr_minutes < dep_minutes and dur_minutes > 0:
+                    is_cross_day = True
+            except (ValueError, AttributeError, IndexError):
+                pass
+
             data = {
                 'train_no': train_no,
                 'train_type': train_type,
@@ -936,6 +1142,7 @@ class MainWindow(QMainWindow):
                 'departure_time': ticket.departure_time,
                 'arrival_time': getattr(ticket, 'arrival_time', '--'),
                 'duration': ticket.duration,
+                'is_cross_day': is_cross_day,
                 'has_ticket': bool(ticket.available_seats),
                 'business_seat': ticket.available_seats.get('商/特', '--'),
                 'first_seat': ticket.available_seats.get('一等座', '--'),
@@ -945,6 +1152,14 @@ class MainWindow(QMainWindow):
                 'soft_seat': ticket.available_seats.get('软座', '--'),
                 'hard_seat': ticket.available_seats.get('硬座', '--'),
                 'no_seat': ticket.available_seats.get('无座', '--'),
+                # 票价信息
+                'business_price': ticket.prices.get('商/特', '') if ticket.prices else '',
+                'first_price': ticket.prices.get('一等座', '') if ticket.prices else '',
+                'second_price': ticket.prices.get('二等座', '') if ticket.prices else '',
+                'soft_sleeper_price': ticket.prices.get('一等/软卧', '') if ticket.prices else '',
+                'hard_sleeper_price': ticket.prices.get('二等/硬卧', '') if ticket.prices else '',
+                'hard_seat_price': ticket.prices.get('硬座', '') if ticket.prices else '',
+                'no_seat_price': ticket.prices.get('无座', '') if ticket.prices else '',
             }
             result.append(data)
         return result
@@ -1299,9 +1514,32 @@ class MainWindow(QMainWindow):
             else:
                 webbrowser.open("https://www.12306.cn")
 
-    def _on_ticket_double_click(self, train_no):
-        """处理车次双击"""
-        # 双击时自动收藏/取消收藏
+    def _on_price_detail_requested(self, ticket_data):
+        """左键双击：显示票价详情弹窗"""
+        train_no = ticket_data.get('train_no', '')
+        from_station = ticket_data.get('from_station', '')
+        to_station = ticket_data.get('to_station', '')
+
+        # 构建票价字典
+        prices = {}
+        price_mapping = {
+            '商/特': ticket_data.get('business_price', ''),
+            '一等座': ticket_data.get('first_price', ''),
+            '二等座': ticket_data.get('second_price', ''),
+            '一等/软卧': ticket_data.get('soft_sleeper_price', ''),
+            '二等/硬卧': ticket_data.get('hard_sleeper_price', ''),
+            '硬座': ticket_data.get('hard_seat_price', ''),
+            '无座': ticket_data.get('no_seat_price', ''),
+        }
+        for seat_name, price_val in price_mapping.items():
+            if price_val:
+                prices[seat_name] = price_val
+
+        dialog = PriceDetailDialog(train_no, from_station, to_station, prices, self)
+        dialog.exec()
+
+    def _on_right_double_click_favorite(self, train_no):
+        """右键双击：收藏/取消收藏"""
         is_favorite = self.favorite_service.toggle_favorite(train_no)
         if is_favorite:
             self.statusBar().showMessage(f"已收藏：{train_no}")

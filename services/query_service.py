@@ -32,6 +32,45 @@ class QueryService:
         self.config_manager = config_manager
         self.cache_service = cache_service
 
+    def _fetch_prices_for_tickets(self, tickets: list, train_date: str) -> None:
+        """
+        批量获取票价，就地修改 tickets 列表中每个 ticket 的 prices 字段
+        :param tickets: TicketInfo 列表
+        :param train_date: 出发日期
+        """
+        import time
+        success_count = 0
+        total_count = len(tickets)
+
+        try:
+            for ticket in tickets:
+                if not ticket.internal_train_no or not ticket.seat_types_code:
+                    self.logger.debug(f"跳过票价查询: {ticket.train_no} (缺少内部车次号或席别代码)")
+                    continue
+
+                self.logger.debug(f"查询票价: {ticket.train_no}, 内部车次号: {ticket.internal_train_no}, "
+                                 f"出发站序: {ticket.from_station_no}, 到达站序: {ticket.to_station_no}")
+
+                price_data = self.ticket_api.query_ticket_price(
+                    train_no=ticket.internal_train_no,
+                    from_station_no=ticket.from_station_no,
+                    to_station_no=ticket.to_station_no,
+                    seat_types=ticket.seat_types_code,
+                    train_date=train_date
+                )
+                if price_data:
+                    ticket.prices = price_data
+                    success_count += 1
+                    self.logger.debug(f"票价查询成功: {ticket.train_no}, 获取到 {len(price_data)} 个席别")
+                else:
+                    self.logger.debug(f"票价查询无数据: {ticket.train_no}")
+
+                time.sleep(0.1)  # 防限流
+        except Exception as e:
+            self.logger.error(f"批量票价查询异常: {e}", exc_info=True)
+
+        self.logger.info(f"票价查询完成: {success_count}/{total_count} 个车次获取到票价")
+
     def execute_query(self, date: str, from_station: str, to_station: str,
                      target_trains: List[str] = None, filters: Dict = None,
                      quick_mode: bool = False) -> Dict:
@@ -42,7 +81,7 @@ class QueryService:
         :param to_station: 到达站
         :param target_trains: 目标车次列表
         :param filters: 筛选参数 {'type', 'from', 'to', 'time_period', 'sort'}
-        :param quick_mode: 快速模式，跳过统计信息（仅用于快速显示）
+        :param quick_mode: 快速模式，跳过统计和票价查询（仅用于快速显示）
         :return: {'table': str, 'tickets': List[TicketInfo], 'all_tickets': List[TicketInfo], 'notification_results': Dict}
         """
         if filters is None:
@@ -93,6 +132,10 @@ class QueryService:
             return_all=True
         )
 
+        # 非快速模式：批量获取票价
+        if not quick_mode and all_tickets:
+            self._fetch_prices_for_tickets(all_tickets, date)
+
         # 快速模式：只返回基本信息，不统计详细信息
         if quick_mode:
             return {
@@ -131,4 +174,35 @@ class QueryService:
             "notification_results": notification_results,
             "total_count": len(raw_data),
             "available_count": len(available_tickets)
+        }
+
+    def execute_transfer_query(self, date: str, from_station: str, to_station: str) -> Dict:
+        """
+        执行中转换乘查询
+        :param date: 出发日期
+        :param from_station: 始发站
+        :param to_station: 到达站
+        :return: {'transfers': List[TransferTicketInfo], 'total_count': int, 'error': str}
+        """
+        raw_data = self.ticket_api.query_transfer(date, from_station, to_station)
+
+        if raw_data == "STATION_NOT_FOUND":
+            return {"error": "STATION_NOT_FOUND", "transfers": [], "total_count": 0}
+        if raw_data is None:
+            return {"error": "QUERY_FAILED", "transfers": [], "total_count": 0}
+
+        result_list = raw_data.get('result', []) if isinstance(raw_data, dict) else []
+
+        transfers = self.ticket_parser.parse_transfer_data(
+            raw_data=result_list,
+            station_dict=self.ticket_api.station_dict,
+            code_to_name=self.ticket_api.code_to_name,
+            date=date
+        )
+
+        self.logger.info(f"中转查询完成: {from_station} -> {to_station}, 共 {len(transfers)} 个方案")
+
+        return {
+            "transfers": transfers,
+            "total_count": len(transfers)
         }

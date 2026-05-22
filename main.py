@@ -71,7 +71,8 @@ def main():
     # 初始化车站数据 - 车站数据放在 exe 同目录
     station_json = os.path.join(base_dir, "station_codes.json")
     from core.ticket_api import TicketAPI
-    ticket_api = TicketAPI(station_json, logger)
+    debug_api = config_manager.get_config().get("logging", {}).get("debug_api", False)
+    ticket_api = TicketAPI(station_json, logger, debug_api=debug_api)
     ticket_api.init_station_data()
 
     # 初始化车次分类器
@@ -169,6 +170,11 @@ def main():
         # 停止所有监控任务
         try:
             monitor_manager.stop_all_tasks()
+        except:
+            pass
+        # 关闭API日志文件
+        try:
+            ticket_api.close()
         except:
             pass
 
