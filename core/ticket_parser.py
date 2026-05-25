@@ -11,6 +11,32 @@ import sys
 class TicketParser:
     """车票解析器"""
 
+    # 12306 leftTicket/query API 字段索引映射
+    # 如果 12306 调整字段顺序，只需修改此处
+    FIELD = {
+        'internal_train_no': 2,   # 内部车次号（票价API用）
+        'train_no': 3,            # 车次号（显示用）
+        'from_station_code': 6,   # 出发站代码
+        'to_station_code': 7,     # 到达站代码
+        'departure_time': 8,      # 出发时间 HH:MM
+        'arrival_time': 9,        # 到达时间 HH:MM
+        'duration': 10,           # 历时 HH:MM
+        'from_station_no': 16,    # 出发站序号（票价API用）
+        'to_station_no': 17,      # 到达站序号（票价API用）
+        'soft_sleeper': 23,       # 一等座/软卧
+        'soft_seat': 24,          # 软座
+        'no_seat': 26,            # 无座
+        'hard_sleeper': 28,       # 二等座/硬卧
+        'hard_seat': 29,          # 硬座
+        'second_class': 30,       # 二等座
+        'first_class': 31,        # 一等座
+        'business_class': 32,     # 商务座/特等座
+        'seat_types_code': 35,    # 席别代码串（票价API用）
+    }
+
+    # 最小字段数量校验
+    MIN_FIELDS = 36
+
     @staticmethod
     def _safe_get(data_list: list, index: int, default: str = "--") -> str:
         """
@@ -53,6 +79,9 @@ class TicketParser:
         :param return_table: 是否返回表格字符串（而非直接打印）
         :return: 车票列表，如果 return_table=True 则返回 (table_str, tickets)
         """
+        F = TicketParser.FIELD
+        _get = TicketParser._safe_get
+
         table = PrettyTable()
         table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商务座/特等座", "一等座", "二等座",
                             "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"]
@@ -63,7 +92,12 @@ class TicketParser:
 
         for item in raw_data:
             d = item.split('|')
-            train_no = TicketParser._safe_get(d, 3, "")
+
+            # 字段数量校验
+            if len(d) < TicketParser.MIN_FIELDS:
+                continue
+
+            train_no = _get(d, F['train_no'], "")
             if not train_no:
                 continue
             train_type = classify_func(train_no) if classify_func else "其他"
@@ -73,8 +107,8 @@ class TicketParser:
             if target_trains and train_no not in target_trains:
                 continue
 
-            f_st_code = TicketParser._safe_get(d, 6, "")
-            t_st_code = TicketParser._safe_get(d, 7, "")
+            f_st_code = _get(d, F['from_station_code'], "")
+            t_st_code = _get(d, F['to_station_code'], "")
             f_st_name = code_to_name.get(f_st_code, f_st_code) if code_to_name and f_st_code else f_st_code
             t_st_name = code_to_name.get(t_st_code, t_st_code) if code_to_name and t_st_code else t_st_code
             if sel_from and f_st_name != sel_from:
@@ -83,23 +117,23 @@ class TicketParser:
                 continue
 
             # 时段筛选
-            departure_time = TicketParser._safe_get(d, 8, "")
+            departure_time = _get(d, F['departure_time'], "")
             from .time_filter import TimeFilter
             if not TimeFilter.filter_by_time_period(departure_time, time_period):
                 continue
 
             # 坐席解析
-            sw = TicketParser._safe_get(d, 32)
-            yd = TicketParser._safe_get(d, 31)
-            ed = TicketParser._safe_get(d, 30)
-            y_wo = TicketParser._safe_get(d, 23)
-            e_wo = TicketParser._safe_get(d, 28)
-            rz = TicketParser._safe_get(d, 24)
-            yz = TicketParser._safe_get(d, 29)
-            wz = TicketParser._safe_get(d, 26)
+            sw = _get(d, F['business_class'])
+            yd = _get(d, F['first_class'])
+            ed = _get(d, F['second_class'])
+            y_wo = _get(d, F['soft_sleeper'])
+            e_wo = _get(d, F['hard_sleeper'])
+            rz = _get(d, F['soft_seat'])
+            yz = _get(d, F['hard_seat'])
+            wz = _get(d, F['no_seat'])
 
             row = [train_no, f_st_name, t_st_name, departure_time,
-                   TicketParser._safe_get(d, 9, ""), TicketParser._safe_get(d, 10, ""),
+                   _get(d, F['arrival_time'], ""), _get(d, F['duration'], ""),
                    sw, yd, ed, y_wo, e_wo, rz, yz, wz]
 
             # 坐席信息
@@ -141,13 +175,13 @@ class TicketParser:
                     to_station=t_st_name,
                     date=date,
                     departure_time=departure_time,
-                    arrival_time=TicketParser._safe_get(d, 9, ""),
-                    duration=TicketParser._safe_get(d, 10, ""),
+                    arrival_time=_get(d, F['arrival_time'], ""),
+                    duration=_get(d, F['duration'], ""),
                     available_seats=available_seats if has_ticket else {},
-                    internal_train_no=TicketParser._safe_get(d, 2, ""),
-                    from_station_no=TicketParser._safe_get(d, 16, ""),
-                    to_station_no=TicketParser._safe_get(d, 17, ""),
-                    seat_types_code=TicketParser._safe_get(d, 35, ""),
+                    internal_train_no=_get(d, F['internal_train_no'], ""),
+                    from_station_no=_get(d, F['from_station_no'], ""),
+                    to_station_no=_get(d, F['to_station_no'], ""),
+                    seat_types_code=_get(d, F['seat_types_code'], ""),
                 )
                 all_tickets.append(ticket_info)
 
@@ -160,16 +194,16 @@ class TicketParser:
         if sort_type:
             temp_all = TicketParser.sort_tickets(temp_all, sort_type)
 
-        # 添加到表格
-        for _, _, row in temp_all:
-            table.add_row(row)
+        # 添加到表格（仅在需要返回表格时执行）
+        if return_table:
+            for _, _, row in temp_all:
+                table.add_row(row)
 
         if return_table:
             # 返回表格字符串和车票列表
             return str(table), all_tickets if return_all else available_tickets
         else:
-            # 直接打印
-            print(table)
+            # 跳过 PrettyTable 生成，直接返回车票列表
             return all_tickets if return_all else available_tickets
 
     @staticmethod
@@ -180,6 +214,9 @@ class TicketParser:
         :param sort_type: 排序类型
         :return: 排序后的列表
         """
+        F = TicketParser.FIELD
+        _get = TicketParser._safe_get
+
         def time_to_minutes(t: str) -> int:
             """将 HH:MM 格式转换为分钟数"""
             try:
@@ -197,31 +234,31 @@ class TicketParser:
                 return 99999
 
         if sort_type == 'earliest_depart':
-            return sorted(tickets_with_data, key=lambda x: time_to_minutes(x[1][8]))
+            return sorted(tickets_with_data, key=lambda x: time_to_minutes(_get(x[1], F['departure_time'], "")))
         elif sort_type == 'latest_depart':
-            return sorted(tickets_with_data, key=lambda x: time_to_minutes(x[1][8]), reverse=True)
+            return sorted(tickets_with_data, key=lambda x: time_to_minutes(_get(x[1], F['departure_time'], "")), reverse=True)
         elif sort_type == 'earliest_arrival':
             def adjusted_arrival(x):
-                depart = time_to_minutes(x[1][8])
-                arrival = time_to_minutes(x[1][9])
-                dur = duration_to_minutes(x[1][10])
+                depart = time_to_minutes(_get(x[1], F['departure_time'], ""))
+                arrival = time_to_minutes(_get(x[1], F['arrival_time'], ""))
+                dur = duration_to_minutes(_get(x[1], F['duration'], ""))
                 if arrival < depart and dur > 0:
                     arrival += 24 * 60
                 return arrival
             return sorted(tickets_with_data, key=adjusted_arrival)
         elif sort_type == 'latest_arrival':
             def adjusted_arrival_rev(x):
-                depart = time_to_minutes(x[1][8])
-                arrival = time_to_minutes(x[1][9])
-                dur = duration_to_minutes(x[1][10])
+                depart = time_to_minutes(_get(x[1], F['departure_time'], ""))
+                arrival = time_to_minutes(_get(x[1], F['arrival_time'], ""))
+                dur = duration_to_minutes(_get(x[1], F['duration'], ""))
                 if arrival < depart and dur > 0:
                     arrival += 24 * 60
                 return arrival
             return sorted(tickets_with_data, key=adjusted_arrival_rev, reverse=True)
         elif sort_type == 'shortest':
-            return sorted(tickets_with_data, key=lambda x: duration_to_minutes(x[1][10]))
+            return sorted(tickets_with_data, key=lambda x: duration_to_minutes(_get(x[1], F['duration'], "")))
         elif sort_type == 'longest':
-            return sorted(tickets_with_data, key=lambda x: duration_to_minutes(x[1][10]), reverse=True)
+            return sorted(tickets_with_data, key=lambda x: duration_to_minutes(_get(x[1], F['duration'], "")), reverse=True)
         return tickets_with_data
 
     @staticmethod
@@ -231,16 +268,22 @@ class TicketParser:
         :param raw_data_item: 原始数据项
         :return: 坐席信息字典
         """
+        F = TicketParser.FIELD
+        _get = TicketParser._safe_get
+
         d = raw_data_item.split('|')
+        if len(d) < TicketParser.MIN_FIELDS:
+            return {}
+
         return {
-            '商务/特等': TicketParser._safe_get(d, 32),
-            '一等座': TicketParser._safe_get(d, 31),
-            '二等座': TicketParser._safe_get(d, 30),
-            '一等/软卧': TicketParser._safe_get(d, 23),
-            '二等/硬卧': TicketParser._safe_get(d, 28),
-            '软座': TicketParser._safe_get(d, 24),
-            '硬座': TicketParser._safe_get(d, 29),
-            '无座': TicketParser._safe_get(d, 26)
+            '商务/特等': _get(d, F['business_class']),
+            '一等座': _get(d, F['first_class']),
+            '二等座': _get(d, F['second_class']),
+            '一等/软卧': _get(d, F['soft_sleeper']),
+            '二等/硬卧': _get(d, F['hard_sleeper']),
+            '软座': _get(d, F['soft_seat']),
+            '硬座': _get(d, F['hard_seat']),
+            '无座': _get(d, F['no_seat'])
         }
 
     @staticmethod
@@ -256,21 +299,23 @@ class TicketParser:
         """
         from notification.base import TicketInfo, TransferTicketInfo
 
+        F = TicketParser.FIELD
+        _get = TicketParser._safe_get
+
         transfers = []
         for item in raw_data:
             d = item.split('|')
             try:
                 # 中转 API 响应格式：每条记录包含两程列车信息
-                # 第一程：标准索引 d[3]=车次, d[6]=出发站代码, d[7]=到达站代码(中转站), d[8]=出发时间, d[9]=到达时间, d[10]=历时
-                # 第二程：偏移索引，具体位置需实际验证，以下为推测值
-                # 中转响应中 d[0] 通常为第一程的 secretStr
+                # 第一程：使用标准 FIELD 索引
+                # 第二程：偏移索引（与标准查询不同，需独立验证）
 
                 # 第一程
-                first_train_no = TicketParser._safe_get(d, 3, "")
+                first_train_no = _get(d, F['train_no'], "")
                 if not first_train_no:
                     continue
-                first_from_code = TicketParser._safe_get(d, 6, "")
-                first_to_code = TicketParser._safe_get(d, 7, "")  # 中转站代码
+                first_from_code = _get(d, F['from_station_code'], "")
+                first_to_code = _get(d, F['to_station_code'], "")  # 中转站代码
                 first_from = code_to_name.get(first_from_code, first_from_code) if code_to_name and first_from_code else first_from_code
                 transfer_station = code_to_name.get(first_to_code, first_to_code) if code_to_name and first_to_code else first_to_code
 
@@ -279,21 +324,21 @@ class TicketParser:
                     from_station=first_from,
                     to_station=transfer_station,
                     date=date or "",
-                    departure_time=TicketParser._safe_get(d, 8, ""),
-                    arrival_time=TicketParser._safe_get(d, 9, ""),
-                    duration=TicketParser._safe_get(d, 10, ""),
+                    departure_time=_get(d, F['departure_time'], ""),
+                    arrival_time=_get(d, F['arrival_time'], ""),
+                    duration=_get(d, F['duration'], ""),
                     available_seats={},
-                    internal_train_no=TicketParser._safe_get(d, 2, ""),
-                    from_station_no=TicketParser._safe_get(d, 16, ""),
-                    to_station_no=TicketParser._safe_get(d, 17, ""),
-                    seat_types_code=TicketParser._safe_get(d, 35, ""),
+                    internal_train_no=_get(d, F['internal_train_no'], ""),
+                    from_station_no=_get(d, F['from_station_no'], ""),
+                    to_station_no=_get(d, F['to_station_no'], ""),
+                    seat_types_code=_get(d, F['seat_types_code'], ""),
                 )
 
                 # 第二程 - 中转 API 中第二程信息在记录的后半部分
                 # 索引偏移量约为 33（需实际验证）
-                second_train_no = TicketParser._safe_get(d, 33, "")
+                second_train_no = _get(d, 33, "")
                 second_from = transfer_station  # 第二程出发站 = 中转站
-                second_to_code = TicketParser._safe_get(d, 37, "")
+                second_to_code = _get(d, 37, "")
                 second_to = code_to_name.get(second_to_code, second_to_code) if code_to_name and second_to_code else second_to_code
 
                 second_leg = TicketInfo(
@@ -301,9 +346,9 @@ class TicketParser:
                     from_station=second_from,
                     to_station=second_to,
                     date=date or "",
-                    departure_time=TicketParser._safe_get(d, 34, ""),
-                    arrival_time=TicketParser._safe_get(d, 35, ""),
-                    duration=TicketParser._safe_get(d, 36, ""),
+                    departure_time=_get(d, 34, ""),
+                    arrival_time=_get(d, 35, ""),
+                    duration=_get(d, 36, ""),
                     available_seats={},
                 )
 

@@ -1,8 +1,8 @@
 # CRTicketMonitor - 12306 余票查询与监控助手
 
-[![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-3.2.0-orange.svg)](https://github.com/)
+[![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-3.3.0-orange.svg)](https://github.com/)
 
-轻量级 12306 余票查询与实时监控工具，支持 GUI 图形界面和命令行双模式。使用 AI 辅助开发。
+轻量级 12306 余票查询与实时监控工具，基于 PySide6 图形界面。使用 AI 辅助开发。
 
 ---
 
@@ -23,13 +23,6 @@
 - **多渠道通知**：Windows Toast、企业微信、飞书、钉钉
 - **快捷跳转**：一键打开 12306 预填信息页面
 
-### 命令行模式
-
-- 支持商务座、一等座、二等座、软卧、硬卧、无座查询
-- 自动从 12306 同步车站代码，输入未知车站时自动纠错
-- 自动 / 手动双模式监控，有票车次绿色高亮
-- 筛选排序二级菜单（车型、站点、时段、排序）
-
 ---
 
 ## 快速开始
@@ -46,23 +39,14 @@ pip install -r requirements.txt
 |---|---|
 | PySide6 >= 6.5.0 | GUI 图形界面 |
 | requests >= 2.28.0 | HTTP 网络请求 |
-| prettytable >= 3.0.0 | 终端表格输出 |
+| prettytable >= 3.0.0 | 表格格式化输出 |
 | pypinyin >= 0.48.0 | 车站拼音搜索 |
-| Pillow >= 9.0.0 | 图像处理 |
 | pyinstaller >= 6.0.0 | 打包工具 |
 
 ### 运行程序
 
-**GUI 模式（默认）**：
-
 ```bash
 python main.py
-```
-
-**命令行模式**：
-
-```bash
-python main.py --cli
 ```
 
 ### 打包为 EXE
@@ -113,44 +97,11 @@ pyinstaller --clean CRTicketMonitor.spec
 
 ---
 
-## 命令行操作指南
-
-### 主菜单
-
-```
-1. 开始新的查询
-2. 修改默认配置
-3. 查看查询历史
-4. 通知设置
-5. 退出程序
-```
-
-### 查询界面
-
-```
-[F] 筛选排序  [M] 切换模式  [E] 导出结果  [R] 重新查询  [Q] 退出
-```
-
-- **F**：进入筛选 / 排序子菜单
-- **M**：切换 D/C 识别模式（官方模式 / 智能模式）
-- **E**：导出查询结果为 JSON
-- **R**：重新查询
-- **Enter**：立即刷新一次
-
-### 筛选排序子菜单
-
-- 车型筛选：全部 / 高铁动车 / 普通车
-- 站点筛选：选择始发站 / 到达站
-- 时段筛选：全部 / 00-06 / 06-12 / 12-18 / 18-24
-- 排序：最早/最晚发车、最早/最晚到达、最短/最长历时
-
----
-
 ## 项目结构
 
 ```
 CRTicketMonitor/
-├── main.py                         # 主程序入口（GUI / CLI）
+├── main.py                         # 主程序入口
 ├── CRTicketMonitor.spec            # PyInstaller 打包配置
 ├── config.json                     # 程序配置文件
 ├── station_codes.json              # 车站代码缓存
@@ -165,11 +116,9 @@ CRTicketMonitor/
 │   └── time_filter.py              # 时间筛选器
 │
 ├── ui/                             # 用户界面模块
-│   ├── gui/
-│   │   ├── main_window.py          # PySide6 主窗口
-│   │   └── filter_panel.py         # 筛选面板组件
-│   ├── cli_menu.py                 # 命令行菜单
-│   └── filter_menu.py              # 命令行筛选菜单
+│   └── gui/
+│       ├── main_window.py          # PySide6 主窗口
+│       └── filter_panel.py         # 筛选面板组件
 │
 ├── services/                       # 业务服务模块
 │   ├── query_service.py            # 查询服务

@@ -61,37 +61,46 @@ else:
         """监控任务执行器（降级版，使用 threading）"""
 
         def __init__(self, interval_seconds: int):
-            self.interval_seconds = interval_seconds
-            self._running = False
+            self._interval = interval_seconds
+            self._interval_lock = threading.Lock()
+            self._stop_event = threading.Event()
             self._thread = None
             self._callbacks = []
+            self._callbacks_lock = threading.Lock()
 
         def start(self):
-            self._running = True
+            self._stop_event.clear()
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
 
         def stop(self):
-            self._running = False
+            self._stop_event.set()
             if self._thread and self._thread.is_alive():
-                self._thread.join(timeout=2)
+                self._thread.join(timeout=5)
 
         def set_interval(self, seconds: int):
-            self.interval_seconds = seconds
+            with self._interval_lock:
+                self._interval = seconds
 
         def _run(self):
-            while self._running:
-                time.sleep(self.interval_seconds)
-                if self._running:
-                    for cb in self._callbacks:
+            while not self._stop_event.is_set():
+                with self._interval_lock:
+                    interval = self._interval
+                self._stop_event.wait(timeout=interval)
+                if not self._stop_event.is_set():
+                    with self._callbacks_lock:
+                        callbacks = list(self._callbacks)
+                    for cb in callbacks:
                         cb()
 
         def connect(self, callback):
-            self._callbacks.append(callback)
+            with self._callbacks_lock:
+                self._callbacks.append(callback)
 
         def disconnect(self, callback):
-            if callback in self._callbacks:
-                self._callbacks.remove(callback)
+            with self._callbacks_lock:
+                if callback in self._callbacks:
+                    self._callbacks.remove(callback)
 
 
 class MonitorManager:

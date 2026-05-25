@@ -57,45 +57,6 @@ $toast = $notifier.Show($null, $null, "{safe_title}", "{safe_message}")
         return True  # Windows 系统自带，始终可用
 
 
-class WindowsDesktopNotification(NotificationChannel):
-    """Windows 桌面通知 (使用 win10toast)"""
-
-    def __init__(self, icon_path: Optional[str] = None):
-        self._toaster = None
-        self._icon_path = icon_path
-        self._init_toaster()
-
-    def _init_toaster(self):
-        try:
-            from win10toast import ToastNotifier
-            self._toaster = ToastNotifier()
-        except ImportError:
-            self._toaster = None
-
-    @property
-    def name(self) -> str:
-        return "Windows桌面通知"
-
-    def send(self, title: str, message: str, ticket_info: Optional[TicketInfo] = None) -> bool:
-        if not self._toaster:
-            return False
-
-        try:
-            self._toaster.show_toast(
-                title=title,
-                msg=message,
-                icon_path=self._icon_path if self._icon_path and os.path.exists(self._icon_path) else None,
-                duration=5,
-                threaded=True
-            )
-            return True
-        except Exception:
-            return False
-
-    def is_available(self) -> bool:
-        return self._toaster is not None
-
-
 class WeChatWorkNotification(NotificationChannel):
     """企业微信机器人通知"""
 

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo CRTicketMonitor v3.2.0 打包脚本
+echo CRTicketMonitor v3.3.0 打包脚本
 echo ========================================
 echo.
 

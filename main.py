@@ -1,6 +1,6 @@
 """
-12306 余票监控工具 - 主程序
-版本：3.2.0
+12306 余票查询与监控工具
+版本：3.3.0
 设计：BH7GUL
 """
 
@@ -38,16 +38,6 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-def has_console():
-    """检查是否有控制台窗口"""
-    try:
-        # 尝试访问 stdin，如果有控制台则不会失败
-        sys.stdin.fileno()
-        return True
-    except (AttributeError, OSError):
-        return False
-
-
 def main():
     """主程序入口"""
     # 获取程序基础目录（exe 所在目录或源码目录）
@@ -58,7 +48,7 @@ def main():
     # 初始化日志系统
     from logger import TicketLogger, QueryHistory
     logger = TicketLogger(log_dir, {})
-    logger.log_startup("3.2.0")
+    logger.log_startup("3.3.0")
 
     # 初始化查询历史
     query_history = QueryHistory(log_dir)
@@ -165,69 +155,32 @@ def main():
     def cleanup():
         try:
             logger.log_shutdown()
-        except:
+        except Exception:
             pass
         # 停止所有监控任务
         try:
             monitor_manager.stop_all_tasks()
-        except:
+        except Exception:
             pass
         # 关闭API日志文件
         try:
             ticket_api.close()
-        except:
+        except Exception:
             pass
 
     atexit.register(cleanup)
 
-    # 检查启动参数和运行环境
-    # --gui: 启动 GUI 界面
-    # --cli: 启动 CLI 界面
-    # 默认：GUI 模式（如果没有控制台）或 CLI 模式（如果有控制台）
-
-    use_gui = None
-
-    if len(sys.argv) > 1:
-        if sys.argv[1] == '--gui':
-            use_gui = True
-        elif sys.argv[1] == '--cli':
-            use_gui = False
-
-    if use_gui is None:
-        # 默认启动 GUI 模式
-        use_gui = True
-        # 只有显式传入 --cli 参数才启动 CLI
-        if len(sys.argv) > 1 and sys.argv[1] == '--cli':
-            use_gui = False
-
-    if use_gui:
-        # 启动 GUI 模式
-        logger.info("启动 GUI 模式")
-        start_gui(
-            query_service=query_service,
-            config_manager=config_manager,
-            favorite_service=favorite_service,
-            cache_service=cache_service,
-            station_search_service=station_search_service,
-            monitor_manager=monitor_manager,
-            logger=logger
-        )
-    else:
-        # 启动 CLI 模式
-        logger.info("启动 CLI 模式")
-        from ui.cli_menu import CLIMenu
-        cli_menu = CLIMenu(
-            logger=logger,
-            config_manager=config_manager,
-            query_service=query_service,
-            query_history=query_history
-        )
-
-        try:
-            cli_menu.show_main_menu()
-        except KeyboardInterrupt:
-            print("\n程序已退出")
-            sys.exit(0)
+    # 启动 GUI 模式
+    logger.info("启动 GUI 模式")
+    start_gui(
+        query_service=query_service,
+        config_manager=config_manager,
+        favorite_service=favorite_service,
+        cache_service=cache_service,
+        station_search_service=station_search_service,
+        monitor_manager=monitor_manager,
+        logger=logger
+    )
 
 
 def start_gui(query_service, config_manager, favorite_service, cache_service,
@@ -243,8 +196,8 @@ def start_gui(query_service, config_manager, favorite_service, cache_service,
     )
 
     app = QApplication(sys.argv)
-    app.setApplicationName("12306 余票监控工具")
-    app.setApplicationVersion("3.2.0")
+    app.setApplicationName("12306 余票查询与监控工具")
+    app.setApplicationVersion("3.3.0")
 
     # 设置应用样式
     app.setStyle("Fusion")

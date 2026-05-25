@@ -229,6 +229,10 @@ class TicketAPI:
         if self.logger:
             self.logger.info("票价缓存已清除")
 
+    def __del__(self):
+        """析构时确保关闭文件句柄"""
+        self.close()
+
     def close(self) -> None:
         """关闭API客户端，释放资源"""
         if self._api_log_file:

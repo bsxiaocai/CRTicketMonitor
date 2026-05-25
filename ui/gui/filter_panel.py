@@ -6,7 +6,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QCheckBox, QComboBox, QGroupBox,
-    QScrollArea, QFrame, QSizePolicy
+    QScrollArea, QFrame, QSizePolicy, QLineEdit
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -331,7 +331,3 @@ class FilterPanel(QWidget):
         self._init_station_checks(self.to_station_checks, self.to_station_layout)
 
         self.filter_changed.emit()
-
-
-# 导入 QLineEdit（如果上面使用了）
-from PySide6.QtWidgets import QLineEdit
