@@ -2,7 +2,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from ui.gui.main_window import TransferWorker
+from ui.gui.workers import TransferWorker
 
 
 class FakeQueryService:

@@ -7,6 +7,9 @@ from prettytable import PrettyTable
 from typing import List, Tuple, Dict
 import sys
 
+from utils.constants import SEAT_SENTINEL
+from utils.time_utils import time_to_minutes, duration_to_minutes
+
 
 class TicketParser:
     """车票解析器"""
@@ -147,27 +150,19 @@ class TicketParser:
 
                 if only_ed_wz:
                     # 只有二等座和无座时，任一有票即认定为有票
-                    ed_has = ed not in ['无', '--', '', '0']
-                    wz_has = wz not in ['无', '--', '', '0']
+                    ed_has = ed not in SEAT_SENTINEL
+                    wz_has = wz not in SEAT_SENTINEL
                     has_ticket = ed_has or wz_has
                 else:
                     # 有其他席位时，使用基础逻辑
-                    has_ticket = any(s not in ['无', '--', '', '0'] for s in [sw, yd, ed, y_wo, e_wo, rz, yz, wz])
+                    has_ticket = any(s not in SEAT_SENTINEL for s in [sw, yd, ed, y_wo, e_wo, rz, yz, wz])
             else:
                 # 基础着色逻辑（非 S 字头：有任意票即绿）
-                has_ticket = any(s not in ['无', '--', '', '0'] for s in [sw, yd, ed, y_wo, e_wo, rz, yz])
-
-            # 着色处理
-            if train_no.upper().startswith('S'):
-                if has_ticket:
-                    row[0] = f"\033[92m{train_no}\033[0m"
-            else:
-                if has_ticket:
-                    row[0] = f"\033[92m{train_no}\033[0m"
+                has_ticket = any(s not in SEAT_SENTINEL for s in [sw, yd, ed, y_wo, e_wo, rz, yz])
 
             # 为所有车次创建 TicketInfo（用于导出）
             from notification.base import TicketInfo
-            available_seats = {k: v for k, v in seats.items() if v not in ['无', '--', '', '0']}
+            available_seats = {k: v for k, v in seats.items() if v not in SEAT_SENTINEL}
             if date:
                 ticket_info = TicketInfo(
                     train_no=train_no,
@@ -216,22 +211,6 @@ class TicketParser:
         """
         F = TicketParser.FIELD
         _get = TicketParser._safe_get
-
-        def time_to_minutes(t: str) -> int:
-            """将 HH:MM 格式转换为分钟数"""
-            try:
-                h, m = map(int, t.split(':'))
-                return h * 60 + m
-            except Exception:
-                return 99999
-
-        def duration_to_minutes(d: str) -> int:
-            """将历时转换为分钟数"""
-            try:
-                h, m = map(int, d.split(':'))
-                return h * 60 + m
-            except Exception:
-                return 99999
 
         if sort_type == 'earliest_depart':
             return sorted(tickets_with_data, key=lambda x: time_to_minutes(_get(x[1], F['departure_time'], "")))
