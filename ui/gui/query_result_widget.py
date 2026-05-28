@@ -253,19 +253,25 @@ class QueryResultWidget(QWidget):
         self.table.blockSignals(True)
         self.table.setUpdatesEnabled(False)
         try:
-            self.table.setRowCount(0)
-
             # 始终使用 filtered_data 显示
             data_to_show = self.filtered_data if self.filtered_data else self.current_data
             favorites_set = getattr(self, 'favorites_set', set())
 
-            for ticket in data_to_show:
-                row_position = self.table.rowCount()
-                self.table.insertRow(row_position)
+            # 预分配行数，避免逐行 insertRow 的开销
+            self.table.setRowCount(len(data_to_show))
 
+            for row_idx, ticket in enumerate(data_to_show):
                 train_no = ticket['train_no']
                 has_ticket = ticket.get('has_ticket', False)
                 is_favorite = train_no.upper() in favorites_set
+
+                # 预计算行背景色
+                if is_favorite:
+                    row_color = QColor(255, 255, 200)  # 黄色
+                elif has_ticket:
+                    row_color = QColor(200, 255, 200)  # 绿色
+                else:
+                    row_color = QColor(240, 240, 240)  # 灰色
 
                 # 构建车次显示（含"复"、"智"标识，用小字）
                 train_display = train_no
@@ -274,29 +280,27 @@ class QueryResultWidget(QWidget):
                 if ticket.get('is_smart', False):
                     train_display += " 智"
 
-                # 设置数据 - 注意列索引变化（去掉类型列后）
-                self.table.setItem(row_position, 0, QTableWidgetItem(train_display))
-                self.table.setItem(row_position, 1, QTableWidgetItem(ticket.get('from_station', '--')))
-                self.table.setItem(row_position, 2, QTableWidgetItem(ticket.get('to_station', '--')))
-                self.table.setItem(row_position, 3, QTableWidgetItem(ticket.get('departure_time', '--')))
-                # 跨天车次到达时间显示"次日"前缀
-                arrival_display = ticket.get('arrival_time', '--')
-                if ticket.get('is_cross_day', False) and arrival_display != '--':
-                    arrival_display = f"次日 {arrival_display}"
-                self.table.setItem(row_position, 4, QTableWidgetItem(arrival_display))
-                self.table.setItem(row_position, 5, QTableWidgetItem(ticket.get('duration', '--')))
-                # 席别列：直接显示余票信息（价格通过左键双击弹窗查看）
-                self.table.setItem(row_position, 6, QTableWidgetItem(ticket.get('business_seat', '--')))
-                self.table.setItem(row_position, 7, QTableWidgetItem(ticket.get('first_seat', '--')))
-                self.table.setItem(row_position, 8, QTableWidgetItem(ticket.get('second_seat', '--')))
-                self.table.setItem(row_position, 9, QTableWidgetItem(ticket.get('soft_sleeper', '--')))
-                self.table.setItem(row_position, 10, QTableWidgetItem(ticket.get('hard_sleeper', '--')))
-                self.table.setItem(row_position, 11, QTableWidgetItem(ticket.get('soft_seat', '--')))
-                self.table.setItem(row_position, 12, QTableWidgetItem(ticket.get('hard_seat', '--')))
-                self.table.setItem(row_position, 13, QTableWidgetItem(ticket.get('no_seat', '--')))
-
-                # 应用颜色
-                self._apply_row_color(row_position, has_ticket, is_favorite)
+                # 设置数据，直接在创建时应用背景色
+                items = [
+                    (0, train_display),
+                    (1, ticket.get('from_station', '--')),
+                    (2, ticket.get('to_station', '--')),
+                    (3, ticket.get('departure_time', '--')),
+                    (4, f"次日 {ticket.get('arrival_time', '--')}" if ticket.get('is_cross_day', False) and ticket.get('arrival_time', '--') != '--' else ticket.get('arrival_time', '--')),
+                    (5, ticket.get('duration', '--')),
+                    (6, ticket.get('business_seat', '--')),
+                    (7, ticket.get('first_seat', '--')),
+                    (8, ticket.get('second_seat', '--')),
+                    (9, ticket.get('soft_sleeper', '--')),
+                    (10, ticket.get('hard_sleeper', '--')),
+                    (11, ticket.get('soft_seat', '--')),
+                    (12, ticket.get('hard_seat', '--')),
+                    (13, ticket.get('no_seat', '--')),
+                ]
+                for col, text in items:
+                    item = QTableWidgetItem(text)
+                    item.setBackground(row_color)
+                    self.table.setItem(row_idx, col, item)
         finally:
             self.table.setUpdatesEnabled(True)
             self.table.blockSignals(False)
@@ -363,9 +367,9 @@ class QueryResultWidget(QWidget):
         self.favorites_set = set(f.upper() for f in favorites)  # 预计算集合用于 O(1) 查找
 
         # 保存原始数据用于排序和筛选
-        # 排序：收藏车次优先
+        # 排序：收藏车次优先（预计算 upper_train_no 避免重复调用）
         self.current_data = sorted(tickets, key=lambda x: (x['train_no'].upper() not in self.favorites_set, x['departure_time']))
-        self.filtered_data = self.current_data.copy()
+        self.filtered_data = self.current_data
 
         # 重置排序状态
         self.sort_column = -1

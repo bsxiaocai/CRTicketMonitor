@@ -9,6 +9,9 @@ import sys
 
 from utils.constants import SEAT_SENTINEL
 from utils.time_utils import time_to_minutes, duration_to_minutes
+from .time_filter import TimeFilter
+from notification.base import TicketInfo
+from core.train_classifier import TrainClassifier
 
 
 class TicketParser:
@@ -85,9 +88,10 @@ class TicketParser:
         F = TicketParser.FIELD
         _get = TicketParser._safe_get
 
-        table = PrettyTable()
-        table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商务座/特等座", "一等座", "二等座",
-                            "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"]
+        if return_table:
+            table = PrettyTable()
+            table.field_names = ["车次", "始发", "到达", "开点", "到点", "历时", "商务座/特等座", "一等座", "二等座",
+                                "软卧/动卧/一等卧", "硬卧/二等卧", "软座", "硬座", "无座"]
 
         available_tickets = []
         all_tickets = []
@@ -121,7 +125,6 @@ class TicketParser:
 
             # 时段筛选
             departure_time = _get(d, F['departure_time'], "")
-            from .time_filter import TimeFilter
             if not TimeFilter.filter_by_time_period(departure_time, time_period):
                 continue
 
@@ -161,7 +164,6 @@ class TicketParser:
                 has_ticket = any(s not in SEAT_SENTINEL for s in [sw, yd, ed, y_wo, e_wo, rz, yz])
 
             # 为所有车次创建 TicketInfo（用于导出）
-            from notification.base import TicketInfo
             available_seats = {k: v for k, v in seats.items() if v not in SEAT_SENTINEL}
             if date:
                 ticket_info = TicketInfo(
@@ -177,6 +179,9 @@ class TicketParser:
                     from_station_no=_get(d, F['from_station_no'], ""),
                     to_station_no=_get(d, F['to_station_no'], ""),
                     seat_types_code=_get(d, F['seat_types_code'], ""),
+                    train_type=train_type,
+                    is_fuxing=TrainClassifier.is_fuxing(train_no),
+                    is_smart=TrainClassifier.is_smart(train_no),
                 )
                 all_tickets.append(ticket_info)
 

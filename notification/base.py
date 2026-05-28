@@ -23,6 +23,9 @@ class TicketInfo:
     from_station_no: str = ""        # 出发站序号（d[16]）
     to_station_no: str = ""          # 到达站序号（d[17]）
     seat_types_code: str = ""        # 席别代码串（d[35]）
+    train_type: str = ""             # 车次类型 "GC"|"D"|"Z"|"T"|"K"|"其他"
+    is_fuxing: bool = False          # 是否复兴号
+    is_smart: bool = False           # 是否智能动车组
     prices: Optional[Dict[str, str]] = None  # {席别显示名: 价格字符串}
 
     def to_dict(self) -> dict:

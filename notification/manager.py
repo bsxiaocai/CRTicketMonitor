@@ -38,9 +38,9 @@ class NotificationManager:
 
     def notify_ticket_available(self, tickets: List[TicketInfo]) -> Dict[str, Dict[str, str]]:
         """
-        发送有票通知
+        发送有票通知（异步，不阻塞查询线程）
         :param tickets: 有票的车次列表
-        :return: 通知结果 {train_no: {channel_name: result}}
+        :return: 立即返回空结果，实际发送在后台线程完成
         """
         if not self.config.enabled:
             return {}
@@ -49,17 +49,30 @@ class NotificationManager:
         current_trains = {ticket.train_no for ticket in tickets}
         new_trains = current_trains - self.monitored_trains
 
-        results = {}
-        for ticket in tickets:
-            # 判断是否为新票（新票强制通知）
-            is_new = ticket.train_no in new_trains
-            if self._should_notify(ticket, force_notify=is_new):
-                results[ticket.train_no] = self._send_notification(ticket, is_new_ticket=is_new)
-
-        # 更新监控车次集合
+        # 更新监控车次集合（同步更新避免竞态）
         self.monitored_trains.update(current_trains)
 
-        return results
+        # 在后台线程中发送通知，不阻塞查询结果返回
+        import threading
+        thread = threading.Thread(
+            target=self._send_notifications_async,
+            args=(tickets, new_trains),
+            daemon=True
+        )
+        thread.start()
+
+        return {}
+
+    def _send_notifications_async(self, tickets: List[TicketInfo], new_trains: set):
+        """
+        在后台线程中发送通知
+        :param tickets: 有票车次列表
+        :param new_trains: 新发现的车次集合
+        """
+        for ticket in tickets:
+            is_new = ticket.train_no in new_trains
+            if self._should_notify(ticket, force_notify=is_new):
+                self._send_notification(ticket, is_new_ticket=is_new)
 
     def _should_notify(self, ticket: TicketInfo, force_notify: bool = False) -> bool:
         """

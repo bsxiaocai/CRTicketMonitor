@@ -734,9 +734,10 @@ class MainWindow(QMainWindow):
         result = []
         for ticket in tickets:
             train_no = ticket.train_no
-            train_type = TrainClassifier.classify_train(train_no)
-            is_fuxing = TrainClassifier.is_fuxing(train_no)
-            is_smart = TrainClassifier.is_smart(train_no)
+            # 优先使用预计算的分类结果，避免在 UI 线程重复调用
+            train_type = ticket.train_type or TrainClassifier.classify_train(train_no)
+            is_fuxing = ticket.is_fuxing
+            is_smart = ticket.is_smart
 
             # 跨天检测
             is_cross_day = _is_cross_day(ticket.departure_time, ticket.arrival_time, ticket.duration)

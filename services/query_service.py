@@ -87,11 +87,6 @@ class QueryService:
         if self.cache_service and not use_cache:
             self.cache_service.set(from_station, to_station, date, raw_data)
 
-        # 准备分类函数 - 传入正确的配置
-        def classify_wrapper(train_no):
-            config = self.config_manager.get_config() if self.config_manager else {}
-            return self.train_classifier.classify_train(train_no, config)
-
         # 解析数据 - return_table=False 跳过 PrettyTable 生成（GUI 不需要）
         all_tickets = self.ticket_parser.parse_and_print(
             raw_data=raw_data,
@@ -105,7 +100,7 @@ class QueryService:
             sort_type=filters.get('sort'),
             station_dict=self.ticket_api.station_dict,
             code_to_name=self.ticket_api.code_to_name,
-            classify_func=classify_wrapper,
+            classify_func=self.train_classifier.classify_train,
             return_table=False,
             return_all=True
         )

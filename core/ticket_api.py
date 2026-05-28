@@ -34,6 +34,7 @@ class TicketAPI:
         self.code_to_name = {}
         self._price_cache = {}
         self._api_log_file = None
+        self._init_session_done = False
 
     def _request_with_retry(self, url: str, params: dict = None, timeout: int = 10, max_retries: int = 3) -> Optional[requests.Response]:
         """
@@ -167,8 +168,11 @@ class TicketAPI:
 
         url = f"https://kyfw.12306.cn/otn/leftTicket/query?leftTicketDTO.train_date={date}&leftTicketDTO.from_station={from_code}&leftTicketDTO.to_station={to_code}&purpose_codes=ADULT"
         try:
-            # 先访问init页面建立session
-            self._request_with_retry("https://kyfw.12306.cn/otn/leftTicket/init", timeout=5)
+            # 首次查询访问init页面建立session，后续跳过
+            if not self._init_session_done:
+                resp = self._request_with_retry("https://kyfw.12306.cn/otn/leftTicket/init", timeout=5)
+                if resp is not None:
+                    self._init_session_done = True
 
             # 使用带重试的请求查询余票
             response = self._request_with_retry(url, timeout=10)
@@ -354,8 +358,11 @@ class TicketAPI:
             f"&purpose_codes=ADULT"
         )
         try:
-            # 先访问init页面建立session
-            self._request_with_retry("https://kyfw.12306.cn/otn/leftTicket/init", timeout=5)
+            # 首次查询访问init页面建立session，后续跳过
+            if not self._init_session_done:
+                resp = self._request_with_retry("https://kyfw.12306.cn/otn/leftTicket/init", timeout=5)
+                if resp is not None:
+                    self._init_session_done = True
 
             # 使用带重试的请求查询中转
             response = self._request_with_retry(url, timeout=15)
