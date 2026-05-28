@@ -118,7 +118,10 @@ CRTicketMonitor/
 ├── ui/                             # 用户界面模块
 │   └── gui/
 │       ├── main_window.py          # PySide6 主窗口
-│       └── filter_panel.py         # 筛选面板组件
+│       ├── filter_panel.py         # 筛选面板组件
+│       ├── query_result_widget.py  # 查询结果表格组件
+│       ├── price_detail_dialog.py  # 票价详情弹窗
+│       └── workers.py              # 后台查询工作线程
 │
 ├── services/                       # 业务服务模块
 │   ├── query_service.py            # 查询服务
@@ -137,8 +140,17 @@ CRTicketMonitor/
 │
 ├── notification/                   # 通知模块
 │   ├── base.py                     # 通知基类
-│   ├── channels.py                 # 通知渠道（Windows / 企微 / 飞书 / 钉钉）
+│   ├── channels.py                 # 通知渠道
 │   └── manager.py                  # 通知管理器
+│
+├── utils/                          # 共享工具模块
+│   ├── time_utils.py               # 时间工具函数
+│   └── constants.py                # 共享常量
+│
+├── tests/                          # 测试模块
+│   ├── test_core_services.py       # 核心服务测试
+│   ├── test_transfer_worker.py     # 中转查询 Worker 测试
+│   └── test_utils.py               # 工具函数测试
 │
 └── dist/                           # 打包输出目录
     ├── CRTicketMonitor.exe         # 可执行文件

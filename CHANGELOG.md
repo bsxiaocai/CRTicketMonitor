@@ -10,6 +10,38 @@
 - 默认配置补齐通知渠道和 API 调试开关，并修复默认配置浅拷贝导致的嵌套状态污染风险。
 - 新增 `pytest` 基础测试，覆盖车次分类、配置合并、缓存、导出、票务解析、历史记录和中转 worker。
 
+### 架构优化
+
+- 从 `main_window.py`（1945 行）中拆分出 `PriceDetailDialog`、`QueryResultWidget`、6 个 Worker/Signal 类为独立模块，`main_window.py` 缩减至 1363 行
+- 新增 `utils/` 共享工具模块：`time_utils.py`（`time_to_minutes` / `duration_to_minutes` / `is_cross_day`）和 `constants.py`（`SEAT_NAMES` / `SEAT_SENTINEL`）
+- 消除项目中 5 处时间解析重复代码、5 处哨兵值重复代码、3 处席位常量重复代码
+- 移除 `ticket_parser.py` 中的 ANSI 转义码（CLI 模式残留），GUI 不再需要 strip 处理
+- `FilterPanel` 改为委托 `StationSearchService` 执行拼音搜索，删除重复的 `_get_pinyin_initials` 方法
+
+### 查询速度优化
+
+- 通知发送改为异步后台线程（fire-and-forget），查询结果不再被通知 I/O 阻塞
+- init 页面请求添加缓存标志位，首次查询后跳过后续重复请求，减少一半网络延迟
+- 移除 `classify_wrapper` 闭包中每趟车都执行的 `config_manager.get_config()` 冗余调用
+- `ticket_parser.py` 循环内的 `TimeFilter` 和 `TicketInfo` import 提升到文件顶层
+- `PrettyTable` 创建改为条件化，GUI 模式（`return_table=False`）不再创建无用对象
+- `TicketInfo` 新增 `train_type`、`is_fuxing`、`is_smart` 字段，解析时一次计算
+- `_convert_tickets_to_data` 直接读取预计算分类字段，UI 线程不再重复调用 `TrainClassifier`
+- `QueryResultWidget._refresh_table` 改用 `setRowCount` 预分配 + 背景色内联，减少 widget 操作
+
+### 测试
+
+- 新增 `tests/test_utils.py`：覆盖 `time_to_minutes`、`duration_to_minutes`（含中文格式）、`is_cross_day`、`SEAT_SENTINEL`
+- 更新 `tests/test_transfer_worker.py` 导入路径适配模块拆分
+
+### 已知问题
+
+- Windows Toast 通知脚本中 `$notifier` 变量未赋值（`channels.py:37-41`），原生通知可能无法正常工作，`try/except` 吞掉所有异常并返回 True
+- `NotificationManager` 的冷却字典和监控集合可能被多个 Worker 线程并发写入，无同步机制
+- 转车解析中第二程数据使用硬编码偏移量（33-37），注释标注"needs actual verification"
+- `prettytable` 依赖在纯 GUI 模式下仍被保留，未移除
+
+
 ## v3.3.0 (2026-05-25)
 
 ### 性能优化
