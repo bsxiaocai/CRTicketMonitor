@@ -4,12 +4,21 @@
 """
 
 import json
-from typing import List
+from typing import List, Any, Dict
 from datetime import datetime
 
 
 class ExportService:
     """导出服务"""
+
+    @staticmethod
+    def _to_export_dict(item: Any) -> Dict:
+        """将车票对象或表格行字典转换为可导出的字典"""
+        if isinstance(item, dict):
+            return item
+        if hasattr(item, "to_dict"):
+            return item.to_dict()
+        raise TypeError(f"不支持的导出数据类型: {type(item).__name__}")
 
     @staticmethod
     def export_to_json(tickets: List, filepath: str) -> None:
@@ -21,7 +30,7 @@ class ExportService:
         data = {
             "export_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "total_count": len(tickets),
-            "tickets": [ticket.to_dict() for ticket in tickets]
+            "tickets": [ExportService._to_export_dict(ticket) for ticket in tickets]
         }
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -37,25 +46,15 @@ class ExportService:
         if not tickets:
             return
 
-        # 获取所有可能的坐席类型
-        all_seat_types = set()
-        for ticket in tickets:
-            all_seat_types.update(ticket.available_seats.keys())
+        rows = [ExportService._to_export_dict(ticket) for ticket in tickets]
 
-        headers = ["车次", "始发站", "到达站", "日期", "开车时间", "历时"] + list(all_seat_types)
+        headers = []
+        for row in rows:
+            for key in row.keys():
+                if key not in headers:
+                    headers.append(key)
 
         with open(filepath, "w", encoding="utf-8-sig", newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-            for ticket in tickets:
-                row = [
-                    ticket.train_no,
-                    ticket.from_station,
-                    ticket.to_station,
-                    ticket.date,
-                    ticket.departure_time,
-                    ticket.duration
-                ]
-                for seat_type in all_seat_types:
-                    row.append(ticket.available_seats.get(seat_type, "--"))
-                writer.writerow(row)
+            writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)

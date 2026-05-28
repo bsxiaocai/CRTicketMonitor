@@ -149,6 +149,36 @@ class QueryWorker(QRunnable):
             self.signals.error.emit(str(e))
 
 
+class TransferResultSignal(QObject):
+    """中转换乘查询结果信号"""
+    finished = Signal(dict)
+    error = Signal(str)
+
+
+class TransferWorker(QRunnable):
+    """后台中转换乘查询工作线程"""
+
+    def __init__(self, query_service, date, from_station, to_station):
+        super().__init__()
+        self.query_service = query_service
+        self.date = date
+        self.from_station = from_station
+        self.to_station = to_station
+        self.signals = TransferResultSignal()
+
+    @Slot()
+    def run(self):
+        try:
+            result = self.query_service.execute_transfer_query(
+                date=self.date,
+                from_station=self.from_station,
+                to_station=self.to_station
+            )
+            self.signals.finished.emit(result)
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
 class QueryResultWidget(QWidget):
     """查询结果表格组件"""
 
@@ -581,13 +611,14 @@ class MainWindow(QMainWindow):
         self.monitor_interval = 30  # 秒
         self._has_queried = False  # 是否已执行过查询
         self._is_querying = False  # 是否正在查询中（防止重复查询）
+        self._is_transfer_querying = False  # 是否正在查询中转换乘
         self._transfer_loaded = False  # 中转查询是否已加载
         self._current_query_date = ""  # 当前查询日期（用于按需加载票价）
 
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("12306 车票查询与监控助手 v3.3.0")
+        self.setWindowTitle("12306 车票查询与监控助手 v3.4.0")
 
         # 窗口大小自适应屏幕（使用屏幕的 85%）
         screen = QApplication.primaryScreen().availableGeometry()
@@ -863,7 +894,10 @@ class MainWindow(QMainWindow):
             self._load_transfer_results()
 
     def _load_transfer_results(self):
-        """加载中转换乘结果"""
+        """异步加载中转换乘结果"""
+        if self._is_transfer_querying:
+            return
+
         from_station = self.from_station_input.text().strip()
         to_station = self.to_station_input.text().strip()
         date = self.date_picker.date().toString("yyyy-MM-dd")
@@ -871,22 +905,46 @@ class MainWindow(QMainWindow):
         if not from_station or not to_station:
             return
 
+        self._is_transfer_querying = True
         self.transfer_hint.setText("正在查询中转方案，请稍候...")
         self.statusBar().showMessage("正在查询中转方案...")
-        QApplication.processEvents()
 
+        worker = TransferWorker(
+            query_service=self.query_service,
+            date=date,
+            from_station=from_station,
+            to_station=to_station
+        )
+        worker.signals.finished.connect(self._on_transfer_finished)
+        worker.signals.error.connect(self._on_transfer_error)
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_transfer_finished(self, result: dict):
+        """中转换乘查询完成回调（主线程）"""
         try:
-            result = self.query_service.execute_transfer_query(date, from_station, to_station)
+            if result.get("error"):
+                if result["error"] == "STATION_NOT_FOUND":
+                    self.transfer_hint.setText("中转查询失败：站名不存在，请检查输入")
+                else:
+                    self.transfer_hint.setText("中转查询失败，请稍后重试")
+                self.statusBar().showMessage("中转查询失败")
+                return
+
             transfers = result.get("transfers", [])
             self._update_transfer_display(transfers)
             self._transfer_loaded = True
             self.transfer_hint.setText(f"共找到 {len(transfers)} 个中转方案")
             self.statusBar().showMessage(f"中转查询完成 - 共 {len(transfers)} 个方案")
-        except Exception as e:
-            self.transfer_hint.setText(f"中转查询失败：{e}")
-            self.statusBar().showMessage("中转查询失败")
-            if self.logger:
-                self.logger.error(f"中转查询失败：{e}", exc_info=True)
+        finally:
+            self._is_transfer_querying = False
+
+    def _on_transfer_error(self, error_msg: str):
+        """中转换乘查询异常回调（主线程）"""
+        self._is_transfer_querying = False
+        self.transfer_hint.setText(f"中转查询失败：{error_msg}")
+        self.statusBar().showMessage("中转查询失败")
+        if self.logger:
+            self.logger.error(f"中转查询失败：{error_msg}")
 
     def _update_transfer_display(self, transfers: list):
         """更新中转表格显示"""
@@ -1443,26 +1501,35 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "没有可导出的数据")
             return
 
-        file_path, _ = QFileDialog.getSaveFileName(
+        file_path, selected_filter = QFileDialog.getSaveFileName(
             self, "导出结果", "", "JSON 文件 (*.json);;CSV 文件 (*.csv);;所有文件 (*)"
         )
 
         if file_path:
             try:
-                # 简化导出：直接导出当前表格数据
+                from services.export_service import ExportService
+
+                # 导出当前表格可见数据，保留用户筛选和排序后的结果。
                 data = []
                 for row in range(current_rows):
                     row_data = {}
                     for col in range(self.result_widget.table.columnCount()):
                         item = self.result_widget.table.item(row, col)
-                        if item:
-                            header = self.result_widget.table.horizontalHeaderItem(col).text()
-                            row_data[header] = item.text()
+                        header_item = self.result_widget.table.horizontalHeaderItem(col)
+                        if header_item:
+                            header = header_item.text().replace(" ▲", "").replace(" ▼", "")
+                            row_data[header] = item.text() if item else ""
                     data.append(row_data)
 
-                import json
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                lower_path = file_path.lower()
+                if "csv" in selected_filter.lower() or lower_path.endswith(".csv"):
+                    if not lower_path.endswith(".csv"):
+                        file_path += ".csv"
+                    ExportService.export_to_csv(data, file_path)
+                else:
+                    if not lower_path.endswith(".json"):
+                        file_path += ".json"
+                    ExportService.export_to_json(data, file_path)
 
                 QMessageBox.information(self, "成功", f"已导出到:\n{file_path}")
             except Exception as e:
@@ -1618,6 +1685,7 @@ class MainWindow(QMainWindow):
             }
 
             self.config_manager.save_config()
+            self._apply_notification_runtime_config()
             self.statusBar().showMessage("通知设置已保存")
             dialog.accept()
 
@@ -1625,6 +1693,48 @@ class MainWindow(QMainWindow):
         cancel_button.clicked.connect(dialog.reject)
 
         dialog.exec()
+
+    def _apply_notification_runtime_config(self):
+        """将通知设置立即应用到当前查询服务"""
+        try:
+            from notification import NotificationManager, NativeWindowsNotification
+            from notification.channels import WeChatWorkNotification, FeishuNotification, DingTalkNotification
+
+            notif_config = self.config_manager.get_config().get("notification", {})
+            manager_config = {
+                "enabled": notif_config.get("enabled", True),
+                "cooldown_seconds": notif_config.get("cooldown_seconds", 300),
+                "only_target_trains": notif_config.get("only_target_trains", False),
+                "min_tickets": notif_config.get("min_tickets", 1),
+                "target_trains": None,
+            }
+            notification_manager = NotificationManager(manager_config)
+            channels_cfg = notif_config.get("channels", {})
+
+            if channels_cfg.get("windows_desktop", {}).get("enabled", True):
+                notification_manager.register_channel(NativeWindowsNotification())
+
+            wx_cfg = channels_cfg.get("wechat_work", {})
+            if wx_cfg.get("enabled") and wx_cfg.get("webhook_url"):
+                notification_manager.register_channel(WeChatWorkNotification(wx_cfg["webhook_url"]))
+
+            fs_cfg = channels_cfg.get("feishu", {})
+            if fs_cfg.get("enabled") and fs_cfg.get("webhook_url"):
+                notification_manager.register_channel(FeishuNotification(fs_cfg["webhook_url"]))
+
+            dd_cfg = channels_cfg.get("dingtalk", {})
+            if dd_cfg.get("enabled") and dd_cfg.get("webhook_url"):
+                notification_manager.register_channel(
+                    DingTalkNotification(dd_cfg["webhook_url"], dd_cfg.get("secret"))
+                )
+
+            self.query_service.notification_manager = notification_manager
+            if self.logger:
+                self.logger.info("通知设置已即时应用")
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"通知设置即时应用失败：{e}", exc_info=True)
+            QMessageBox.warning(self, "警告", f"通知设置已保存，但即时应用失败：{e}")
 
     def _open_12306(self):
         """打开 12306 网页"""
@@ -1681,7 +1791,7 @@ class MainWindow(QMainWindow):
         """显示关于对话框"""
         QMessageBox.about(
             self, "关于",
-            "12306 车票查询与监控助手 v3.3.0\n\n"
+            "12306 车票查询与监控助手 v3.4.0\n\n"
             "基于 PySide6 的 GUI 版本\n\n"
             "功能特性:\n"
             "- 余票查询\n"

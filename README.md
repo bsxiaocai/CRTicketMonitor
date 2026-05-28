@@ -1,6 +1,6 @@
 # CRTicketMonitor - 12306 余票查询与监控助手
 
-[![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-3.3.0-orange.svg)](https://github.com/)
+[![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/) [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-3.4.0-orange.svg)](https://github.com/)
 
 轻量级 12306 余票查询与实时监控工具，基于 PySide6 图形界面。使用 AI 辅助开发。
 

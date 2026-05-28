@@ -5,6 +5,7 @@
 
 import json
 import os
+from copy import deepcopy
 
 
 class ConfigManager:
@@ -14,26 +15,52 @@ class ConfigManager:
         "dc_classification": {
             "default_mode": "official",
             "smart_threshold": 899,
-            "custom_mapping": {}
+            "custom_mapping": {},
+            "description": "official: DC 全归为动车; smart: 仅 CD 字头 1-899 归为普通车"
         },
         "notification": {
             "enabled": True,
             "cooldown_seconds": 300,
             "only_target_trains": False,
-            "min_tickets": 1
+            "min_tickets": 1,
+            "channels": {
+                "windows_desktop": {
+                    "enabled": True,
+                    "description": "Windows 原生 Toast 通知"
+                },
+                "wechat_work": {
+                    "enabled": False,
+                    "webhook_url": "",
+                    "description": "企业微信机器人 Webhook URL"
+                },
+                "feishu": {
+                    "enabled": False,
+                    "webhook_url": "",
+                    "description": "飞书机器人 Webhook URL"
+                },
+                "dingtalk": {
+                    "enabled": False,
+                    "webhook_url": "",
+                    "secret": "",
+                    "description": "钉钉机器人 Webhook URL 和签名密钥"
+                }
+            }
         },
         "logging": {
             "level": "INFO",
             "max_size_mb": 10,
             "backup_count": 5,
             "console_output": False,
-            "log_query_history": True
+            "log_query_history": True,
+            "debug_api": False
         },
         "auto_open_12306": False,
         "gui": {
             "default_monitor_interval": 30,
             "theme": "light"
-        }
+        },
+        "version": "3.4.0",
+        "description": "CRTicketMonitor 配置文件 - GUI 版本"
     }
 
     def __init__(self, config_path: str):
@@ -42,7 +69,7 @@ class ConfigManager:
         :param config_path: 配置文件路径
         """
         self.config_path = config_path
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = deepcopy(self.DEFAULT_CONFIG)
         self.load_config()
 
     def load_config(self) -> dict:
